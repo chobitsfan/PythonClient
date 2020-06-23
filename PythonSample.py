@@ -19,7 +19,17 @@
 # and receive data via a NatNet connection and decode it using the NatNetClient library.
 
 from NatNetClient import NatNetClient
+from pymavlink import mavutil
 import time, threading
+from scipy import signal
+
+posx = []
+posy = []
+posz = []
+rot = (1,0,0,0)
+sampling_period = 1.0/120.0
+last_pos_send_ts = 0
+uwb_anchor = mavutil.mavlink_connection(device="com3", baud=3000000, source_system=255)
 
 # This is a callback function that gets connected to the NatNet client and called once per mocap frame.
 def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBodyCount, skeletonCount,
@@ -28,13 +38,21 @@ def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBo
 
 # This is a callback function that gets connected to the NatNet client. It is called once per rigid body per frame
 def receiveRigidBodyFrame( id, position, rotation ):
-    print( "Received frame for rigid body", id )
+    global rot
+    #print( "Received frame for rigid body", id , position, rotation)
+    x=position[0]
+    y=position[2]
+    z=-position[1]
+    rot=(rotation[3], rotation[0], rotation[2], -rotation[1])
+    posx.append(x)
+    posy.append(y)
+    posz.append(z)
 
 # This will create a new NatNet client
 streamingClient = NatNetClient()
 
 # Configure the streaming client to call our rigid body handler on the emulator to send data out.
-streamingClient.newFrameListener = receiveNewFrame
+streamingClient.newFrameListener = None
 streamingClient.rigidBodyListener = receiveRigidBodyFrame
 
 # Start up the streaming client now that the callbacks are set up.
@@ -42,4 +60,34 @@ streamingClient.rigidBodyListener = receiveRigidBodyFrame
 streamingClient.run()
 
 while threading.active_count() > 1:
-    time.sleep(1)
+    cur_ts = time.time()
+    if cur_ts - last_pos_send_ts > 0.07 and len(posx) > 3:
+        x=posx[-1]
+        y=posy[-1]
+        z=posz[-1]
+        velx = signal.savgol_filter(posx, 3, 2, deriv=1, delta=sampling_period)
+        vely = signal.savgol_filter(posy, 3, 2, deriv=1, delta=sampling_period)
+        velz = signal.savgol_filter(posz, 3, 2, deriv=1, delta=sampling_period)
+        posx[:] = [] #empty list
+        posy[:] = [] 
+        posz[:] = [] 
+        cur_us = int(cur_ts * 1000000)
+        m = uwb_anchor.mav.att_pos_mocap_encode(cur_us, rot, x, y, z)
+        m.pack(uwb_anchor.mav)
+        b1 = m.get_msgbuf()
+        m = uwb_anchor.mav.vision_speed_estimate_encode(cur_us, velx[-2], vely[-2], velz[-2])
+        m.pack(uwb_anchor.mav)
+        b2 = m.get_msgbuf()
+        uwb_anchor.write(b2+b1)
+        last_pos_send_ts=time.time()
+    msg = uwb_anchor.recv_msg()
+    if msg is not None:
+        msg_type = msg.get_type()
+        if msg_type == "BAD_DATA":
+            print ("bad [", ":".join("{:02x}".format(c) for c in msg.get_msgbuf()), "]")
+            pass
+        else:
+            if msg_type == "HEARTBEAT":
+                print ("[", msg.get_srcSystem(),"] heartbeat", time.time(), "mode", msg.custom_mode)
+            elif msg_type == "STATUSTEXT":
+                print ("[", msg.get_srcSystem(),"]", msg.text)

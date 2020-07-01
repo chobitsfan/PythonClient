@@ -300,7 +300,7 @@ class NatNetClient:
                         deviceChannelVal = int.from_bytes( data[offset:offset+4], byteorder='little' )
                         offset += 4
                         trace( "\t\t", deviceChannelVal )
-						       
+
         # Timecode            
         timecode = int.from_bytes( data[offset:offset+4], byteorder='little' )
         offset += 4

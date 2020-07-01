@@ -22,6 +22,7 @@ from NatNetClient import NatNetClient
 from pymavlink import mavutil
 import time, threading
 from scipy import signal
+from collections import deque
 
 class Drone():
     def __init__(self):
@@ -34,7 +35,7 @@ drones = [ Drone() for i in range(20) ]
 sampling_period = 1.0/120.0
 uwb_anchor = mavutil.mavlink_connection(device="com3", baud=3000000, source_system=255)
 uwb_last_send_ts = 0
-msgs = []
+msgs = deque()
 
 # This is a callback function that gets connected to the NatNet client and called once per mocap frame.
 def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBodyCount, skeletonCount,
@@ -68,8 +69,9 @@ def receiveRigidBodyFrame( id, position, rotation ):
         m = uwb_anchor.mav.vision_speed_estimate_encode(id, 0, cur_us, velx[-3], vely[-3], velz[-3])
         m.pack(uwb_anchor.mav)
         b2 = m.get_msgbuf()
-        uwb_anchor.write(b2+b1)
-        drone.last_send_ts = time.time()        
+        msgs.append(b2+b1)
+        #uwb_anchor.write(b2+b1)
+        drone.last_send_ts = cur_ts
 
 # This will create a new NatNet client
 streamingClient = NatNetClient()
@@ -83,4 +85,6 @@ streamingClient.rigidBodyListener = receiveRigidBodyFrame
 streamingClient.run()
 
 while threading.active_count() > 1:
-    pass
+    if len(msgs) > 0:
+        uwb_anchor.write(msgs.popleft())
+    time.sleep(0.001)

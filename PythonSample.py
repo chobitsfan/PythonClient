@@ -23,6 +23,7 @@ from pymavlink import mavutil
 import time, threading
 from scipy import signal
 from collections import deque
+import socket
 
 class Drone():
     def __init__(self):
@@ -92,7 +93,16 @@ streamingClient.rigidBodyListener = receiveRigidBodyFrame
 # This will run perpetually, and operate on a separate thread.
 streamingClient.run()
 
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.settimeout(0.001)
+sock.bind(("127.0.0.1", 17500))
 while threading.active_count() > 1:
     if len(msgs) > 0:
         uwb_anchor.write(msgs.popleft())
-    time.sleep(0.001)
+    try:
+        data = sock.recv(512)
+    except socket.timeout:
+        pass
+    else:
+        uwb_anchor.write(data)
+    

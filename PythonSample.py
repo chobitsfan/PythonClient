@@ -43,35 +43,43 @@ def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBo
     print( "Received frame", frameNumber )
 
 # This is a callback function that gets connected to the NatNet client. It is called once per rigid body per frame
-def receiveRigidBodyFrame( id, position, rotation ):
-    #print( "Received frame for rigid body", id , position, rotation)
-    x=position[0]
-    y=position[2]
-    z=-position[1]
-    rot=(rotation[3], rotation[0], rotation[2], -rotation[1])
-    drone = drones[id]
-    drone.posx.append(x)
-    drone.posy.append(y)
-    drone.posz.append(z)
-    cur_ts = time.time()
-    if cur_ts - drone.last_send_ts > 0.07 and len(drone.posx) > 5:
-        #print("send ", id, drone.last_send_ts)
-        velx = signal.savgol_filter(drone.posx, 5, 2, deriv=1, delta=sampling_period)
-        vely = signal.savgol_filter(drone.posy, 5, 2, deriv=1, delta=sampling_period)
-        velz = signal.savgol_filter(drone.posz, 5, 2, deriv=1, delta=sampling_period)
+def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
+    #print( "Received frame for rigid body", id , trackingValid, position, rotation )
+    if trackingValid:
+        x=position[0]
+        y=position[2]
+        z=-position[1]
+        rot=(rotation[3], rotation[0], rotation[2], -rotation[1])
+        drone = drones[id]
+        drone.posx.append(x)
+        drone.posy.append(y)
+        drone.posz.append(z)
+        cur_ts = time.time()
+        if cur_ts - drone.last_send_ts > 0.07:
+            if len(drone.posx) < 5:
+                velx = None
+            else:
+                velx = signal.savgol_filter(drone.posx, 5, 2, deriv=1, delta=sampling_period)
+                vely = signal.savgol_filter(drone.posy, 5, 2, deriv=1, delta=sampling_period)
+                velz = signal.savgol_filter(drone.posz, 5, 2, deriv=1, delta=sampling_period)
+            drone.posx.clear()
+            drone.posy.clear() 
+            drone.posz.clear() 
+            cur_us = int(cur_ts * 1000000)
+            m = uwb_anchor.mav.att_pos_mocap_encode(id, 0, cur_us, rot, x, y, z)        
+            m.pack(uwb_anchor.mav)
+            b1 = m.get_msgbuf()
+            if velx is None:
+                msgs.append(b1)
+            else:
+                m = uwb_anchor.mav.vision_speed_estimate_encode(id, 0, cur_us, velx[-3], vely[-3], velz[-3])
+                m.pack(uwb_anchor.mav)
+                b2 = m.get_msgbuf()
+                msgs.append(b2+b1)
+            drone.last_send_ts = cur_ts
+    else:
+        drone = drones[id]
         drone.posx.clear()
-        drone.posy.clear() 
-        drone.posz.clear() 
-        cur_us = int(cur_ts * 1000000)
-        m = uwb_anchor.mav.att_pos_mocap_encode(id, 0, cur_us, rot, x, y, z)        
-        m.pack(uwb_anchor.mav)
-        b1 = m.get_msgbuf()
-        m = uwb_anchor.mav.vision_speed_estimate_encode(id, 0, cur_us, velx[-3], vely[-3], velz[-3])
-        m.pack(uwb_anchor.mav)
-        b2 = m.get_msgbuf()
-        msgs.append(b2+b1)
-        #uwb_anchor.write(b2+b1)
-        drone.last_send_ts = cur_ts
 
 # This will create a new NatNet client
 streamingClient = NatNetClient()

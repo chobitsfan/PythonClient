@@ -102,10 +102,6 @@ class NatNetClient:
         offset += 16
         trace( "\tOrientation:", rot[0],",", rot[1],",", rot[2],",", rot[3] )
 
-        # Send information to any listener.
-        if self.rigidBodyListener is not None:
-            self.rigidBodyListener( id, pos, rot )
-
         # RB Marker Data ( Before version 3.0.  After Version 3.0 Marker data is in description )
         if( self.__natNetStreamVersion[0] < 3  and self.__natNetStreamVersion[0] != 0) :
             # Marker count (4 bytes)
@@ -138,12 +134,17 @@ class NatNetClient:
             offset += 4
             trace( "\tMarker Error:", markerError )
 
+        trackingValid = True
         # Version 2.6 and later
         if( ( ( self.__natNetStreamVersion[0] == 2 ) and ( self.__natNetStreamVersion[1] >= 6 ) ) or self.__natNetStreamVersion[0] > 2 or self.__natNetStreamVersion[0] == 0 ):
             param, = struct.unpack( 'h', data[offset:offset+2] )
             trackingValid = ( param & 0x01 ) != 0
             offset += 2
             trace( "\tTracking Valid:", 'True' if trackingValid else 'False' )
+        
+        # Send information to any listener.
+        if self.rigidBodyListener is not None:
+            self.rigidBodyListener( id, pos, rot, trackingValid)
 
         return offset
 

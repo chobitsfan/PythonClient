@@ -31,6 +31,7 @@ class Drone():
         self.posy = []
         self.posz = []
         self.last_send_ts = 0
+        self.tracked = False
 
 drones = [ Drone() for i in range(20) ] 
 sampling_period = 1.0/120.0
@@ -44,14 +45,17 @@ def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBo
     print( "Received frame", frameNumber )
 
 # This is a callback function that gets connected to the NatNet client. It is called once per rigid body per frame
-def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
-    #print( "Received frame for rigid body", id , trackingValid, position, rotation )
+def receiveRigidBodyFrame( id, position, rotation, trackingValid ):    
     if trackingValid:
+        #print( "Received frame for rigid body", id , position, rotation )
         x=position[0]
         y=position[2]
         z=-position[1]
         rot=(rotation[3], rotation[0], rotation[2], -rotation[1])
         drone = drones[id]
+        if not drone.tracked:
+            drone.tracked = True
+            print(id, "tracked")
         drone.posx.append(x)
         drone.posy.append(y)
         drone.posz.append(z)
@@ -80,6 +84,9 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
             drone.last_send_ts = cur_ts
     else:
         drone = drones[id]
+        if drone.tracked:
+            drone.tracked = False
+            print(id, "not tracked")
         drone.posx.clear()
 
 # This will create a new NatNet client

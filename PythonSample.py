@@ -60,8 +60,9 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
         drone.posy.append(y)
         drone.posz.append(z)
         cur_ts = time.time()
-        if cur_ts - drone.last_send_ts > 0.07:
+        if cur_ts - drone.last_send_ts > 0.08:
             if len(drone.posx) < 5:
+                #print("not enough pos")
                 velx = None
             else:
                 velx = signal.savgol_filter(drone.posx, 5, 2, deriv=1, delta=sampling_period)
@@ -101,15 +102,17 @@ streamingClient.rigidBodyListener = receiveRigidBodyFrame
 streamingClient.run()
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-sock.settimeout(0.001)
+sock.settimeout(0.002)
 sock.bind(("127.0.0.1", 17500))
 while threading.active_count() > 1:
-    if len(msgs) > 0:
+    uwb_cur_ts = time.time()
+    if len(msgs) > 0 and uwb_cur_ts - uwb_last_send_ts > 0.002:
+        #print(len(msgs),"msgs left in queue")
         uwb_anchor.write(msgs.popleft())
+        uwb_last_send_ts = uwb_cur_ts
     try:
         data = sock.recv(512)
     except socket.timeout:
         pass
     else:
-        uwb_anchor.write(data)
-    
+        msgs.append(data)

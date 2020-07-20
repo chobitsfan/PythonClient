@@ -45,9 +45,10 @@ def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBo
     print( "Received frame", frameNumber )
 
 # This is a callback function that gets connected to the NatNet client. It is called once per rigid body per frame
-def receiveRigidBodyFrame( id, position, rotation, trackingValid ):    
+def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
+    cur_ts = time.time()
     if trackingValid:
-        #print( "Received frame for rigid body", id , position, rotation )
+        #print( "Received frame for rigid body", id , position, rotation )        
         x=position[0]
         y=position[2]
         z=-position[1]
@@ -55,14 +56,16 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
         drone = drones[id]
         if not drone.tracked:
             drone.tracked = True
-            print(id, "tracked")
+            print(id, "tracked", cur_ts)
         drone.posx.append(x)
         drone.posy.append(y)
-        drone.posz.append(z)
-        cur_ts = time.time()
+        drone.posz.append(z)        
         if cur_ts - drone.last_send_ts > 0.08:
             if len(drone.posx) < 5:
-                #print("not enough pos")
+                #make sure vel is sent in the beginning
+                if drone.last_send_ts == 0:
+                    return
+                print("not enough pos, no vel")
                 velx = None
             else:
                 velx = signal.savgol_filter(drone.posx, 5, 2, deriv=1, delta=sampling_period)
@@ -71,25 +74,26 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
             drone.posx.clear()
             drone.posy.clear() 
             drone.posz.clear() 
-            cur_us = int(cur_ts * 1000000)
-            m = uwb_anchor.mav.att_pos_mocap_encode(id, 0, cur_us, rot, x, y, z)        
+            m = uwb_anchor.mav.att_pos_mocap_encode(id, 0, int(cur_ts * 1000000), rot, x, y, z)        
             m.pack(uwb_anchor.mav)
             b1 = m.get_msgbuf()
             if velx is None:
+                #print("send pos");
                 #msgs.append(b1)
                 uwb_anchor.write(b1)
             else:
-                m = uwb_anchor.mav.vision_speed_estimate_encode(id, 0, int((cur_ts-2.0/120)*1000000), velx[-3], vely[-3], velz[-3])
+                #print("send pos and vel");
+                m = uwb_anchor.mav.vision_speed_estimate_encode(id, 0, int((cur_ts-sampling_period*2)*1000000), velx[-3], vely[-3], velz[-3])
                 m.pack(uwb_anchor.mav)
                 b2 = m.get_msgbuf()
-                #msgs.append(b1+b2)
+                #msgs.append(b2+b1)
                 uwb_anchor.write(b2+b1)
             drone.last_send_ts = cur_ts
     else:
         drone = drones[id]
         if drone.tracked:
             drone.tracked = False
-            print(id, "not tracked")
+            print(id, "not tracked", cur_ts)
         drone.posx.clear()
 
 # This will create a new NatNet client

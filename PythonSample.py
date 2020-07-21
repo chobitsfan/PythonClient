@@ -79,15 +79,15 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
             b1 = m.get_msgbuf()
             if velx is None:
                 #print("send pos");
-                #msgs.append(b1)
-                uwb_anchor.write(b1)
+                msgs.append(b1)
+                #uwb_anchor.write(b1)
             else:
                 #print("send pos and vel");
                 m = uwb_anchor.mav.vision_speed_estimate_encode(id, 0, int((cur_ts-sampling_period*2)*1000000), velx[-3], vely[-3], velz[-3])
                 m.pack(uwb_anchor.mav)
                 b2 = m.get_msgbuf()
-                #msgs.append(b2+b1)
-                uwb_anchor.write(b2+b1)
+                msgs.append(b2+b1)
+                #uwb_anchor.write(b2+b1)
             drone.last_send_ts = cur_ts
     else:
         drone = drones[id]
@@ -108,7 +108,7 @@ streamingClient.rigidBodyListener = receiveRigidBodyFrame
 streamingClient.run()
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-sock.settimeout(0.001)
+sock.settimeout(0.005)
 sock.bind(("127.0.0.1", 17500))
 while threading.active_count() > 1:
     msg = uwb_anchor.recv_msg()
@@ -122,15 +122,16 @@ while threading.active_count() > 1:
             elif msg_type == "STATUSTEXT":
                 print ("[", msg.get_srcSystem(),"]", msg.text)
 
-    #uwb_cur_ts = time.time()
-    #if len(msgs) > 0 and uwb_cur_ts - uwb_last_send_ts > 0.005:
+    uwb_cur_ts = time.time()
+    if len(msgs) > 0 and uwb_cur_ts - uwb_last_send_ts > 0.005:
         #print(len(msgs),"msgs left in queue")
-        #uwb_anchor.write(msgs.popleft())
-        #uwb_last_send_ts = uwb_cur_ts
+        uwb_anchor.write(msgs.popleft())
+        uwb_last_send_ts = uwb_cur_ts
 
-    #try:
-    #    data = sock.recv(512)
-    #except socket.timeout:
-    #    pass
-    #else:
-    #    msgs.append(data)
+    try:
+        data = sock.recv(512)
+    except socket.timeout:
+        pass
+    else:
+        print("from unity")
+        msgs.append(data)

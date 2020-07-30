@@ -37,6 +37,8 @@ drones = [ Drone() for i in range(20) ]
 sampling_period = 1.0/120.0
 uwb_anchor = mavutil.mavlink_connection(device="com3", baud=3000000, source_system=255)
 uwb_last_send_ts = 0
+last_sys_time = 0
+start_ts = time.time()
 msgs = deque()
 
 # This is a callback function that gets connected to the NatNet client and called once per mocap frame.
@@ -74,7 +76,7 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
             drone.posx.clear()
             drone.posy.clear() 
             drone.posz.clear() 
-            m = uwb_anchor.mav.att_pos_mocap_encode(id, 0, int(cur_ts * 1000000), rot, x, y, z)        
+            m = uwb_anchor.mav.att_pos_mocap_encode(id, 0, int(cur_ts * 1000000), rot, x, y, z)
             m.pack(uwb_anchor.mav)
             b1 = m.get_msgbuf()
             if velx is None:
@@ -122,16 +124,22 @@ while threading.active_count() > 1:
             elif msg_type == "STATUSTEXT":
                 print ("[", msg.get_srcSystem(),"]", msg.text)
 
-    uwb_cur_ts = time.time()
-    if len(msgs) > 0 and uwb_cur_ts - uwb_last_send_ts > 0.005:
+    cur_ts = time.time()
+    if len(msgs) > 0 and cur_ts - uwb_last_send_ts > 0.005:
         #print(len(msgs),"msgs left in queue")
-        uwb_anchor.write(msgs.popleft())
-        uwb_last_send_ts = uwb_cur_ts
+        uwb_anchor.write(msgs.popleft())        
+        uwb_last_send_ts = cur_ts
+
+    if cur_ts - last_sys_time > 5:
+        m = uwb_anchor.mav.system_time_encode(int(cur_ts * 1000000), int((cur_ts - start_ts)*1000))
+        m.pack(uwb_anchor.mav)
+        msgs.append(m.get_msgbuf())
+        last_sys_time = cur_ts
 
     try:
         data = sock.recv(512)
     except socket.timeout:
         pass
     else:
-        print("from unity")
+        #print("unity msg", time.time(), len(data))
         msgs.append(data)

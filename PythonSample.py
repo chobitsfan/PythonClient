@@ -112,6 +112,7 @@ streamingClient.run()
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.settimeout(0.005)
 sock.bind(("127.0.0.1", 17500))
+sock_out = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 while threading.active_count() > 1:
     msg = uwb_anchor.recv_msg()
     if msg is not None:
@@ -123,6 +124,9 @@ while threading.active_count() > 1:
                 print ("[", msg.get_srcSystem(),"] heartbeat", time.time(), "mode", msg.custom_mode)
             elif msg_type == "STATUSTEXT":
                 print ("[", msg.get_srcSystem(),"]", msg.text)
+            #elif msg_type == "LOCAL_POSITION_NED":
+            #    print ("[", msg.get_srcSystem(),"]", msg.x, msg.y, msg.z)
+            sock_out.sendto(msg.get_msgbuf(), ("127.0.0.1", 17501))
 
     cur_ts = time.time()
     if len(msgs) > 0 and cur_ts - uwb_last_send_ts > 0.005:
@@ -141,5 +145,5 @@ while threading.active_count() > 1:
     except socket.timeout:
         pass
     else:
-        #print("unity msg", time.time(), len(data))
+        #print("msg from unity", time.time(), len(data))
         msgs.append(data)

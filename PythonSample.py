@@ -76,7 +76,7 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
             drone.posx.clear()
             drone.posy.clear() 
             drone.posz.clear() 
-            m = uwb_anchor.mav.att_pos_mocap_encode(id, 0, int(cur_ts * 1000000), rot, x, y, z)
+            m = uwb_anchor.mav.att_pos_mocap_encode(int(cur_ts * 1000000), rot, x, y, z)
             m.pack(uwb_anchor.mav)
             b1 = m.get_msgbuf()
             if velx is None:
@@ -85,7 +85,7 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
                 #uwb_anchor.write(b1)
             else:
                 #print("send pos and vel");
-                m = uwb_anchor.mav.vision_speed_estimate_encode(id, 0, int((cur_ts-sampling_period*2)*1000000), velx[-3], vely[-3], velz[-3])
+                m = uwb_anchor.mav.vision_speed_estimate_encode(int((cur_ts-sampling_period*2)*1000000), velx[-3], vely[-3], velz[-3])
                 m.pack(uwb_anchor.mav)
                 b2 = m.get_msgbuf()
                 msgs.append(b2+b1)

@@ -35,7 +35,7 @@ class Drone():
 
 drones = [ Drone() for i in range(20) ] 
 sampling_period = 1.0/120.0
-uwb_anchor = mavutil.mavlink_connection(device="com3", baud=3000000, source_system=255)
+uwb_anchor = mavutil.mavlink_connection(device="udpin:0.0.0.0:17501", source_system=255)
 uwb_last_send_ts = 0
 last_sys_time = 0
 start_ts = time.time()
@@ -81,15 +81,15 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
             b1 = m.get_msgbuf()
             if velx is None:
                 #print("send pos");
-                msgs.append(b1)
-                #uwb_anchor.write(b1)
+                #msgs.append(b1)
+                uwb_anchor.write(b1)
             else:
                 #print("send pos and vel");
                 m = uwb_anchor.mav.vision_speed_estimate_encode(int((cur_ts-sampling_period*2)*1000000), velx[-3], vely[-3], velz[-3])
                 m.pack(uwb_anchor.mav)
                 b2 = m.get_msgbuf()
-                msgs.append(b2+b1)
-                #uwb_anchor.write(b2+b1)
+                #msgs.append(b2+b1)
+                uwb_anchor.write(b2+b1)
             drone.last_send_ts = cur_ts
     else:
         drone = drones[id]
@@ -126,7 +126,7 @@ while threading.active_count() > 1:
                 print ("[", msg.get_srcSystem(),"]", msg.text)
             #elif msg_type == "LOCAL_POSITION_NED":
             #    print ("[", msg.get_srcSystem(),"]", msg.x, msg.y, msg.z)
-            sock_out.sendto(msg.get_msgbuf(), ("127.0.0.1", 17501))
+            #sock_out.sendto(msg.get_msgbuf(), ("127.0.0.1", 17501))
 
     cur_ts = time.time()
     if len(msgs) > 0 and cur_ts - uwb_last_send_ts > 0.005:

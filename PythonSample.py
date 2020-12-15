@@ -35,22 +35,17 @@ class Drone():
 
 drones = [ Drone() for i in range(20) ] 
 sampling_period = 1.0/120.0
-uwb_anchor = mavutil.mavlink_connection(device="udpin:0.0.0.0:17501", source_system=255)
-uwb_last_send_ts = 0
+uwb_anchor = mavutil.mavlink_connection(device="udpout:192.168.0.10:17500", source_system=255)
+uwb_anchor.mav.heartbeat_send(mavutil.mavlink.MAV_TYPE_GCS, mavutil.mavlink.MAV_AUTOPILOT_INVALID, 0, 0, 0)
 last_sys_time = 0
+lsat_hb_sent = 0
 start_ts = time.time()
-msgs = deque()
-
-# This is a callback function that gets connected to the NatNet client and called once per mocap frame.
-def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBodyCount, skeletonCount,
-                    labeledMarkerCount, timecode, timecodeSub, timestamp, isRecording, trackedModelsChanged ):
-    print( "Received frame", frameNumber )
 
 # This is a callback function that gets connected to the NatNet client. It is called once per rigid body per frame
 def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
     cur_ts = time.time()
     if trackingValid:
-        #print( "Received frame for rigid body", id , position, rotation )        
+        #print( "Received frame for rigid body", id , position, rotation )
         x=position[0]
         y=position[2]
         z=-position[1]
@@ -81,14 +76,12 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
             b1 = m.get_msgbuf()
             if velx is None:
                 #print("send pos");
-                #msgs.append(b1)
                 uwb_anchor.write(b1)
             else:
                 #print("send pos and vel");
                 m = uwb_anchor.mav.vision_speed_estimate_encode(int((cur_ts-sampling_period*2)*1000000), velx[-3], vely[-3], velz[-3])
                 m.pack(uwb_anchor.mav)
                 b2 = m.get_msgbuf()
-                #msgs.append(b2+b1)
                 uwb_anchor.write(b2+b1)
             drone.last_send_ts = cur_ts
     else:
@@ -109,11 +102,11 @@ streamingClient.rigidBodyListener = receiveRigidBodyFrame
 # This will run perpetually, and operate on a separate thread.
 streamingClient.run()
 
-sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-sock.settimeout(0.005)
-sock.bind(("127.0.0.1", 17500))
-sock_out = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-while threading.active_count() > 1:
+#sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+#sock.settimeout(0.005)
+#sock.bind(("127.0.0.1", 17500))
+#sock_out = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+while threading.active_count() > 1:    
     msg = uwb_anchor.recv_msg()
     if msg is not None:
         msg_type = msg.get_type()
@@ -129,21 +122,17 @@ while threading.active_count() > 1:
             #sock_out.sendto(msg.get_msgbuf(), ("127.0.0.1", 17501))
 
     cur_ts = time.time()
-    if len(msgs) > 0 and cur_ts - uwb_last_send_ts > 0.005:
-        #print(len(msgs),"msgs left in queue")
-        uwb_anchor.write(msgs.popleft())        
-        uwb_last_send_ts = cur_ts
-
     if cur_ts - last_sys_time > 5:
-        m = uwb_anchor.mav.system_time_encode(int(cur_ts * 1000000), int((cur_ts - start_ts)*1000))
-        m.pack(uwb_anchor.mav)
-        msgs.append(m.get_msgbuf())
+        uwb_anchor.mav.system_time_send(int(cur_ts * 1000000), int((cur_ts - start_ts)*1000))
         last_sys_time = cur_ts
+    if cur_ts - lsat_hb_sent > 1:
+        uwb_anchor.mav.heartbeat_send(mavutil.mavlink.MAV_TYPE_GCS, mavutil.mavlink.MAV_AUTOPILOT_INVALID, 0, 0, 0)
+        lsat_hb_sent = cur_ts
 
-    try:
-        data = sock.recv(512)
-    except socket.timeout:
-        pass
-    else:
+    #try:
+    #    data = sock.recv(512)
+    #except socket.timeout:
+    #    pass
+    #else:
         #print("msg from unity", time.time(), len(data))
-        msgs.append(data)
+    #    uwb_anchor.write(data)

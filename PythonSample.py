@@ -34,15 +34,12 @@ class Drone():
         self.tracked = False
 
 drones = [ Drone() for i in range(20) ] 
-sampling_period = 1.0/120.0
-uwb_anchor = mavutil.mavlink_connection(device="udpout:192.168.0.10:17500", source_system=255)
-uwb_anchor.mav.heartbeat_send(mavutil.mavlink.MAV_TYPE_GCS, mavutil.mavlink.MAV_AUTOPILOT_INVALID, 0, 0, 0)
-last_sys_time = 0
-lsat_hb_sent = 0
-start_ts = time.time()
+master = mavutil.mavlink_connection(device="udpout:192.168.0.10:17500", source_system=255)
+master.mav.heartbeat_send(mavutil.mavlink.MAV_TYPE_GCS, mavutil.mavlink.MAV_AUTOPILOT_INVALID, 0, 0, 0)
 
 # This is a callback function that gets connected to the NatNet client. It is called once per rigid body per frame
 def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
+    sampling_period = 1.0/120.0
     cur_ts = time.time()
     if trackingValid:
         #print( "Received frame for rigid body", id , position, rotation )
@@ -71,18 +68,18 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
             drone.posx.clear()
             drone.posy.clear() 
             drone.posz.clear() 
-            m = uwb_anchor.mav.att_pos_mocap_encode(int(cur_ts * 1000000), rot, x, y, z)
-            m.pack(uwb_anchor.mav)
+            m = master.mav.att_pos_mocap_encode(int(cur_ts * 1000000), rot, x, y, z)
+            m.pack(master.mav)
             b1 = m.get_msgbuf()
             if velx is None:
                 #print("send pos");
-                uwb_anchor.write(b1)
+                master.write(b1)
             else:
                 #print("send pos and vel");
-                m = uwb_anchor.mav.vision_speed_estimate_encode(int((cur_ts-sampling_period*2)*1000000), velx[-3], vely[-3], velz[-3])
-                m.pack(uwb_anchor.mav)
+                m = master.mav.vision_speed_estimate_encode(int((cur_ts-sampling_period*2)*1000000), velx[-3], vely[-3], velz[-3])
+                m.pack(master.mav)
                 b2 = m.get_msgbuf()
-                uwb_anchor.write(b2+b1)
+                master.write(b2+b1)
             drone.last_send_ts = cur_ts
     else:
         drone = drones[id]
@@ -91,48 +88,56 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
             print(id, "not tracked", cur_ts)
         drone.posx.clear()
 
-# This will create a new NatNet client
-streamingClient = NatNetClient()
+def main():
+    last_sys_time = 0
+    lsat_hb_sent = 0
+    start_ts = time.time()
 
-# Configure the streaming client to call our rigid body handler on the emulator to send data out.
-streamingClient.newFrameListener = None
-streamingClient.rigidBodyListener = receiveRigidBodyFrame
+    # This will create a new NatNet client
+    streamingClient = NatNetClient()
 
-# Start up the streaming client now that the callbacks are set up.
-# This will run perpetually, and operate on a separate thread.
-streamingClient.run()
+    # Configure the streaming client to call our rigid body handler on the emulator to send data out.
+    streamingClient.newFrameListener = None
+    streamingClient.rigidBodyListener = receiveRigidBodyFrame
 
-#sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-#sock.settimeout(0.005)
-#sock.bind(("127.0.0.1", 17500))
-#sock_out = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-while threading.active_count() > 1:    
-    msg = uwb_anchor.recv_msg()
-    if msg is not None:
-        msg_type = msg.get_type()
-        if msg_type == "BAD_DATA":
-            print ("bad [", ":".join("{:02x}".format(c) for c in msg.get_msgbuf()), "]")
-        else:
-            if msg_type == "HEARTBEAT":
-                print ("[", msg.get_srcSystem(),"] heartbeat", time.time(), "mode", msg.custom_mode)
-            elif msg_type == "STATUSTEXT":
-                print ("[", msg.get_srcSystem(),"]", msg.text)
-            #elif msg_type == "LOCAL_POSITION_NED":
-            #    print ("[", msg.get_srcSystem(),"]", msg.x, msg.y, msg.z)
-            #sock_out.sendto(msg.get_msgbuf(), ("127.0.0.1", 17501))
+    # Start up the streaming client now that the callbacks are set up.
+    # This will run perpetually, and operate on a separate thread.
+    streamingClient.run()
 
-    cur_ts = time.time()
-    if cur_ts - last_sys_time > 5:
-        uwb_anchor.mav.system_time_send(int(cur_ts * 1000000), int((cur_ts - start_ts)*1000))
-        last_sys_time = cur_ts
-    if cur_ts - lsat_hb_sent > 1:
-        uwb_anchor.mav.heartbeat_send(mavutil.mavlink.MAV_TYPE_GCS, mavutil.mavlink.MAV_AUTOPILOT_INVALID, 0, 0, 0)
-        lsat_hb_sent = cur_ts
+    #sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    #sock.settimeout(0.005)
+    #sock.bind(("127.0.0.1", 17500))
+    #sock_out = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    while threading.active_count() > 1:    
+        msg = master.recv_msg()
+        if msg is not None:
+            msg_type = msg.get_type()
+            if msg_type == "BAD_DATA":
+                print ("bad [", ":".join("{:02x}".format(c) for c in msg.get_msgbuf()), "]")
+            else:
+                if msg_type == "HEARTBEAT":
+                    print ("[", msg.get_srcSystem(),"] heartbeat", time.time(), "mode", msg.custom_mode)
+                elif msg_type == "STATUSTEXT":
+                    print ("[", msg.get_srcSystem(),"]", msg.text)
+                #elif msg_type == "LOCAL_POSITION_NED":
+                #    print ("[", msg.get_srcSystem(),"]", msg.x, msg.y, msg.z)
+                #sock_out.sendto(msg.get_msgbuf(), ("127.0.0.1", 17501))
 
-    #try:
-    #    data = sock.recv(512)
-    #except socket.timeout:
-    #    pass
-    #else:
-        #print("msg from unity", time.time(), len(data))
-    #    uwb_anchor.write(data)
+        cur_ts = time.time()
+        if cur_ts - last_sys_time > 5:
+            master.mav.system_time_send(int(cur_ts * 1000000), int((cur_ts - start_ts)*1000))
+            last_sys_time = cur_ts
+        if cur_ts - lsat_hb_sent > 2:
+            master.mav.heartbeat_send(mavutil.mavlink.MAV_TYPE_GCS, mavutil.mavlink.MAV_AUTOPILOT_INVALID, 0, 0, 0)
+            lsat_hb_sent = cur_ts
+
+        #try:
+        #    data = sock.recv(512)
+        #except socket.timeout:
+        #    pass
+        #else:
+            #print("msg from unity", time.time(), len(data))
+        #    master.write(data)
+
+if __name__ == '__main__':
+    main()

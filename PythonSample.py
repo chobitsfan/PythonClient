@@ -34,12 +34,12 @@ class Drone():
         self.tracked = False
 
 drones = [ Drone() for i in range(20) ] 
-master = mavutil.mavlink_connection(device="udpout:192.168.0.10:17500", source_system=255)
+master = mavutil.mavlink_connection(device="udpout:192.168.0.10:14550", source_system=255)
 master.mav.heartbeat_send(mavutil.mavlink.MAV_TYPE_GCS, mavutil.mavlink.MAV_AUTOPILOT_INVALID, 0, 0, 0)
 
 # This is a callback function that gets connected to the NatNet client. It is called once per rigid body per frame
 def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
-    sampling_period = 1.0/120.0
+    sampling_period = 1.0/240.0
     cur_ts = time.time()
     if trackingValid:
         #print( "Received frame for rigid body", id , position, rotation )
@@ -54,7 +54,7 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
         drone.posx.append(x)
         drone.posy.append(y)
         drone.posz.append(z)        
-        if cur_ts - drone.last_send_ts > 0.08:
+        if cur_ts - drone.last_send_ts > 0.02:
             if len(drone.posx) < 5:
                 #make sure vel is sent in the beginning
                 if drone.last_send_ts == 0:
@@ -65,9 +65,9 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
                 velx = signal.savgol_filter(drone.posx, 5, 2, deriv=1, delta=sampling_period)
                 vely = signal.savgol_filter(drone.posy, 5, 2, deriv=1, delta=sampling_period)
                 velz = signal.savgol_filter(drone.posz, 5, 2, deriv=1, delta=sampling_period)
-            drone.posx.clear()
-            drone.posy.clear() 
-            drone.posz.clear() 
+                drone.posx.clear()
+                drone.posy.clear()
+                drone.posz.clear()
             m = master.mav.att_pos_mocap_encode(int(cur_ts * 1000000), rot, x, y, z)
             m.pack(master.mav)
             b1 = m.get_msgbuf()
@@ -76,7 +76,7 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
                 master.write(b1)
             else:
                 #print("send pos and vel");
-                m = master.mav.vision_speed_estimate_encode(int((cur_ts-sampling_period*2)*1000000), velx[-3], vely[-3], velz[-3])
+                m = master.mav.vision_speed_estimate_encode(int(cur_ts * 1000000), velx[-3], vely[-3], velz[-3])
                 m.pack(master.mav)
                 b2 = m.get_msgbuf()
                 master.write(b2+b1)
@@ -87,6 +87,8 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
             drone.tracked = False
             print(id, "not tracked", cur_ts)
         drone.posx.clear()
+        drone.posy.clear()
+        drone.posz.clear()
 
 def main():
     last_sys_time = 0

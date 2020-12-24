@@ -34,10 +34,9 @@ class Drone():
         self.posz = []
         self.last_send_ts = 0
         self.tracked = False
+        self.master = None
 
 drones = [ Drone() for i in range(20) ] 
-master = mavutil.mavlink_connection(device="udpout:192.168.0.10:14550", source_system=255)
-master.mav.heartbeat_send(mavutil.mavlink.MAV_TYPE_GCS, mavutil.mavlink.MAV_AUTOPILOT_INVALID, 0, 0, 0)
 gogogo = True
 
 def signal_handler(sig, frame):
@@ -61,12 +60,12 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
         drone.posx.append(x)
         drone.posy.append(y)
         drone.posz.append(z)        
-        if cur_ts - drone.last_send_ts > 0.025:
+        if cur_ts - drone.last_send_ts > 0.04:
             if len(drone.posx) < 5:
                 #make sure vel is sent in the beginning
                 if drone.last_send_ts == 0:
                     return
-                print("not enough pos, no vel")
+                print("not enough pos" , len(drone.posx) , "no vel")
                 velx = None
             else:
                 velx = scipy_signal.savgol_filter(drone.posx, 5, 2, deriv=1, delta=sampling_period)
@@ -75,6 +74,9 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
                 drone.posx.clear()
                 drone.posy.clear()
                 drone.posz.clear()
+            if drone.last_send_ts == 0:
+                drone.master = mavutil.mavlink_connection(device="udpout:192.168.0."+str(id)+":14550", source_system=255)
+            master = drone.master
             m = master.mav.att_pos_mocap_encode(int(cur_ts * 1000000), rot, x, y, z)
             m.pack(master.mav)
             b1 = m.get_msgbuf()
@@ -100,8 +102,6 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
 def main():
     signal.signal(signal.SIGINT, signal_handler)
 
-    last_sys_time = 0
-    lsat_hb_sent = 0
     start_ts = time.time()
 
     # This will create a new NatNet client
@@ -120,31 +120,31 @@ def main():
     #sock.bind(("127.0.0.1", 17500))
     #sock_out = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     while gogogo:
-        msg = master.recv_msg()
-        if msg is not None:
-            msg_type = msg.get_type()
-            if msg_type == "BAD_DATA":
-                print ("bad [", ":".join("{:02x}".format(c) for c in msg.get_msgbuf()), "]")
-            else:
-                if msg_type == "HEARTBEAT":
-                    print ("[", msg.get_srcSystem(),"] heartbeat", time.time(), "mode", msg.custom_mode)
-                elif msg_type == "STATUSTEXT":
-                    print ("[", msg.get_srcSystem(),"]", msg.text)
-                elif msg_type == "TIMESYNC":
-                    if msg.tc1 > 0:
-                        print ("[", msg.get_srcSystem(),"] latency ", (time.time() * 1000000 - msg.ts1) / 2000, " ms")
-                #elif msg_type == "LOCAL_POSITION_NED":
-                #    print ("[", msg.get_srcSystem(),"]", msg.x, msg.y, msg.z)
-                #sock_out.sendto(msg.get_msgbuf(), ("127.0.0.1", 17501))
+        for drone in drones:
+            if drone.last_send_ts > 0:
+                master = drone.master
+                msg = master.recv_msg()
+                if msg is not None:
+                    msg_type = msg.get_type()
+                    if msg_type == "BAD_DATA":
+                        print ("bad [", ":".join("{:02x}".format(c) for c in msg.get_msgbuf()), "]")
+                    else:
+                        if msg_type == "HEARTBEAT":
+                            print ("[", msg.get_srcSystem(),"] heartbeat", time.time(), "mode", msg.custom_mode)
+                        elif msg_type == "STATUSTEXT":
+                            print ("[", msg.get_srcSystem(),"]", msg.text)
+                        elif msg_type == "TIMESYNC":
+                            if msg.tc1 > 0:
+                                print ("[", msg.get_srcSystem(),"] latency ", (time.time() * 1000000 - msg.ts1) / 2000, " ms")
+                        #elif msg_type == "LOCAL_POSITION_NED":
+                        #    print ("[", msg.get_srcSystem(),"]", msg.x, msg.y, msg.z)
+                        #sock_out.sendto(msg.get_msgbuf(), ("127.0.0.1", 17501))
 
-        cur_ts = time.time()
-        if cur_ts - last_sys_time > 15:
-            master.mav.system_time_send(int(cur_ts * 1000000), int((cur_ts - start_ts)*1000))
-            master.mav.timesync_send(tc1 = 0, ts1 = int(cur_ts * 1000000))
-            last_sys_time = cur_ts
-        if cur_ts - lsat_hb_sent > 2:
-            master.mav.heartbeat_send(mavutil.mavlink.MAV_TYPE_GCS, mavutil.mavlink.MAV_AUTOPILOT_INVALID, 0, 0, 0)
-            lsat_hb_sent = cur_ts
+                #cur_ts = time.time()
+                #if cur_ts - last_sys_time > 15:
+                #    master.mav.system_time_send(int(cur_ts * 1000000), int((cur_ts - start_ts)*1000))
+                #    master.mav.timesync_send(tc1 = 0, ts1 = int(cur_ts * 1000000))
+                #    last_sys_time = cur_ts
 
         #try:
         #    data = sock.recv(512)

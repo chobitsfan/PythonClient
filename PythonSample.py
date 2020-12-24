@@ -18,12 +18,14 @@
 # Uses the Python NatNetClient.py library to establish a connection (by creating a NatNetClient),
 # and receive data via a NatNet connection and decode it using the NatNetClient library.
 
+import os
+os.environ['FOR_DISABLE_CONSOLE_CTRL_HANDLER'] = '1'
 from NatNetClient import NatNetClient
 from pymavlink import mavutil
 import time, threading
 from scipy import signal
 from collections import deque
-import socket
+import socket, signal
 
 class Drone():
     def __init__(self):
@@ -36,6 +38,11 @@ class Drone():
 drones = [ Drone() for i in range(20) ] 
 master = mavutil.mavlink_connection(device="udpout:192.168.0.10:14550", source_system=255)
 master.mav.heartbeat_send(mavutil.mavlink.MAV_TYPE_GCS, mavutil.mavlink.MAV_AUTOPILOT_INVALID, 0, 0, 0)
+gogogo = True;
+
+def signal_handler(sig, frame):
+    global gogogo
+    gogogo = False
 
 # This is a callback function that gets connected to the NatNet client. It is called once per rigid body per frame
 def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
@@ -91,6 +98,8 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
         drone.posz.clear()
 
 def main():
+    signal.signal(signal.SIGINT, signal_handler)
+
     last_sys_time = 0
     lsat_hb_sent = 0
     start_ts = time.time()
@@ -110,7 +119,7 @@ def main():
     #sock.settimeout(0.005)
     #sock.bind(("127.0.0.1", 17500))
     #sock_out = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    while threading.active_count() > 1:    
+    while gogogo:
         msg = master.recv_msg()
         if msg is not None:
             msg_type = msg.get_type()
@@ -121,13 +130,16 @@ def main():
                     print ("[", msg.get_srcSystem(),"] heartbeat", time.time(), "mode", msg.custom_mode)
                 elif msg_type == "STATUSTEXT":
                     print ("[", msg.get_srcSystem(),"]", msg.text)
+                elif msg_type == "TIMESYNC":
+                    print ("[", msg.get_srcSystem(),"] latency ", (time.time() * 1000000 - msg.ts1) / 2)
                 #elif msg_type == "LOCAL_POSITION_NED":
                 #    print ("[", msg.get_srcSystem(),"]", msg.x, msg.y, msg.z)
                 #sock_out.sendto(msg.get_msgbuf(), ("127.0.0.1", 17501))
 
         cur_ts = time.time()
-        if cur_ts - last_sys_time > 5:
+        if cur_ts - last_sys_time > 10:
             master.mav.system_time_send(int(cur_ts * 1000000), int((cur_ts - start_ts)*1000))
+            master.mav.timesync_send(tc1 = 0, ts1 = int(cur_ts * 1000000))
             last_sys_time = cur_ts
         if cur_ts - lsat_hb_sent > 2:
             master.mav.heartbeat_send(mavutil.mavlink.MAV_TYPE_GCS, mavutil.mavlink.MAV_AUTOPILOT_INVALID, 0, 0, 0)
@@ -140,6 +152,8 @@ def main():
         #else:
             #print("msg from unity", time.time(), len(data))
         #    master.write(data)
+
+    print("bye")
 
 if __name__ == '__main__':
     main()

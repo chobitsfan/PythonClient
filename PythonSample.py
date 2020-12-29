@@ -29,8 +29,9 @@ import socket, signal
 
 class Drone():
     def __init__(self):
+        self.time_offset = 0
         self.last_send_ts = 0
-        self.last_sys_time = 0
+        self.last_sync_time = 0
         self.tracked = False
         self.master = None
 
@@ -43,7 +44,6 @@ def signal_handler(sig, frame):
 
 # This is a callback function that gets connected to the NatNet client. It is called once per rigid body per frame
 def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
-    cur_ts = time.time()
     if trackingValid:
         #print( "Received frame for rigid body", id , position, rotation )
         x=position[0]
@@ -51,24 +51,26 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
         z=-position[1]
         rot=(rotation[3], rotation[0], rotation[2], -rotation[1])
         drone = drones[id]
+        cur_ts = time.time()
         if not drone.tracked:
             drone.tracked = True
             print(id, "tracked", cur_ts)
-        if cur_ts - drone.last_send_ts > 0.04:
-            if drone.last_send_ts == 0:
-                drone.master = mavutil.mavlink_connection(device="udpout:192.168.0."+str(id)+":14550", source_system=255)
-            drone.master.mav.att_pos_mocap_send(int(cur_ts * 1000000), rot, x, y, z)
+        if drone.master is None:
+            drone.master = mavutil.mavlink_connection(device="udpout:192.168.0."+str(id)+":14550", source_system=255)
+        if drone.time_offset == 0 and cur_ts - drone.last_sync_time > 3:
+            drone.master.mav.system_time_send(int(cur_ts * 1000000), 0)
+            drone.last_sync_time = cur_ts
+        if drone.time_offset > 0 and cur_ts - drone.last_send_ts > 0.04:
+            drone.master.mav.att_pos_mocap_send(int(cur_ts * 1000000 - drone.time_offset), rot, x, y, z)
             drone.last_send_ts = cur_ts
     else:
         drone = drones[id]
         if drone.tracked:
             drone.tracked = False
-            print(id, "not tracked", cur_ts)
+            print(id, "not tracked", time.time())
 
 def main():
     signal.signal(signal.SIGINT, signal_handler)
-
-    start_ts = time.time()
 
     # This will create a new NatNet client
     streamingClient = NatNetClient()
@@ -83,7 +85,7 @@ def main():
 
     while gogogo:
         for drone in drones:
-            if drone.last_send_ts > 0:
+            if drone.last_send_ts > 0 or drone.last_sync_time > 0:
                 msg = drone.master.recv_msg()
                 if msg is not None:
                     msg_type = msg.get_type()
@@ -95,13 +97,9 @@ def main():
                         elif msg_type == "STATUSTEXT":
                             print ("[", msg.get_srcSystem(),"]", msg.text)
                         elif msg_type == "TIMESYNC":
-                            if msg.tc1 > 0:
-                                print ("[", msg.get_srcSystem(),"] latency ", (time.time() * 1000000 - msg.ts1) / 2000, " ms")
-
-                cur_ts = time.time()
-                if cur_ts - drone.last_sys_time > 13:
-                    drone.master.mav.system_time_send(int(cur_ts * 1000000), int((cur_ts - start_ts)*1000))
-                    drone.last_sys_time = cur_ts
+                            if msg.tc1 == 0:
+                                drone.time_offset = time.time() * 1000000 - msg.ts1
+                                print ("[", msg.get_srcSystem(),"] timesync", msg.ts1)
 
     print("bye")
 

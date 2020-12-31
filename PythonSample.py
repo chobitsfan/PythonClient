@@ -58,9 +58,9 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
         if drone.master is None:
             drone.master = mavutil.mavlink_connection(device="udpout:192.168.0."+str(id)+":14550", source_system=255)
         if drone.time_offset == 0 and cur_ts - drone.last_sync_time > 3:
-            drone.master.mav.system_time_send(int(cur_ts * 1000000), 0)
+            drone.master.mav.system_time_send(int(cur_ts * 1000000), 0) # ardupilot ignore time_boot_ms 
             drone.last_sync_time = cur_ts
-        if drone.time_offset > 0 and cur_ts - drone.last_send_ts > 0.04:
+        if drone.time_offset > 0:
             drone.master.mav.att_pos_mocap_send(int(cur_ts * 1000000 - drone.time_offset), rot, x, y, z)
             drone.last_send_ts = cur_ts
     else:
@@ -96,10 +96,17 @@ def main():
                             print ("[", msg.get_srcSystem(),"] heartbeat", time.time(), "mode", msg.custom_mode)
                         elif msg_type == "STATUSTEXT":
                             print ("[", msg.get_srcSystem(),"]", msg.text)
-                        elif msg_type == "TIMESYNC":
+                        elif msg_type == "TIMESYNC" and drone.time_offset == 0:
                             if msg.tc1 == 0:
-                                drone.time_offset = time.time() * 1000000 - msg.ts1
+                                #drone.master.mav.timesync_send(1000, msg.ts1) # ardupilot ignore tc1
+                                drone.master.mav.timesync_send(0, int(time.time() * 1000000))
                                 print ("[", msg.get_srcSystem(),"] timesync", msg.ts1)
+                            else:
+                                cur_us = time.time() * 1000000
+                                lag_us = (cur_us - msg.ts1) * 0.5
+                                #drone.time_offset = cur_us - msg.tc1 * 0.001 - lag_us # ardupilot send ts1 amd tc1 in nano-seconds
+                                drone.time_offset = cur_us - msg.tc1 * 0.001
+                                print ("[", msg.get_srcSystem(),"] network lag", lag_us * 0.001, "ms")
 
     print("bye")
 

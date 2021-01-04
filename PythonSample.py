@@ -60,7 +60,7 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
         if drone.time_offset == 0 and cur_ts - drone.last_sync_time > 3:
             drone.master.mav.system_time_send(int(cur_ts * 1000000), 0) # ardupilot ignore time_boot_ms 
             drone.last_sync_time = cur_ts
-        if drone.time_offset > 0:
+        if drone.time_offset > 0 and cur_ts - drone.last_send_ts > 0.3:
             drone.master.mav.att_pos_mocap_send(int(cur_ts * 1000000 - drone.time_offset), rot, x, y, z)
             drone.last_send_ts = cur_ts
     else:
@@ -98,15 +98,17 @@ def main():
                             print ("[", msg.get_srcSystem(),"]", msg.text)
                         elif msg_type == "TIMESYNC" and drone.time_offset == 0:
                             if msg.tc1 == 0:
-                                #drone.master.mav.timesync_send(1000, msg.ts1) # ardupilot ignore tc1
-                                drone.master.mav.timesync_send(0, int(time.time() * 1000000))
-                                print ("[", msg.get_srcSystem(),"] timesync", msg.ts1)
-                            else:
                                 cur_us = time.time() * 1000000
-                                lag_us = (cur_us - msg.ts1) * 0.5
+                                drone.master.mav.timesync_send(int(cur_us), msg.ts1) # ardupilot ignore tc1
+                                #drone.master.mav.timesync_send(0, int(time.time() * 1000000))
+                                drone.time_offset = cur_us - msg.ts1 * 0.001 # ardupilot send ts1 amd tc1 in nano-seconds
+                                print ("[", msg.get_srcSystem(),"] timesync", msg.ts1)
+                            #else:
+                                #cur_us = time.time() * 1000000
+                                #lag_us = (cur_us - msg.ts1) * 0.5
                                 #drone.time_offset = cur_us - msg.tc1 * 0.001 - lag_us # ardupilot send ts1 amd tc1 in nano-seconds
-                                drone.time_offset = cur_us - msg.tc1 * 0.001
-                                print ("[", msg.get_srcSystem(),"] network lag", lag_us * 0.001, "ms")
+                                #drone.time_offset = cur_us - msg.tc1 * 0.001
+                                #print ("[", msg.get_srcSystem(),"] network lag", lag_us * 0.001, "ms")
 
     print("bye")
 

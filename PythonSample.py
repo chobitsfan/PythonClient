@@ -60,7 +60,7 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
         if drone.time_offset == 0 and cur_ts - drone.last_sync_time > 3:
             drone.master.mav.system_time_send(int(cur_ts * 1000000), 0) # ardupilot ignore time_boot_ms 
             drone.last_sync_time = cur_ts
-        if drone.time_offset > 0 and cur_ts - drone.last_send_ts > 0.3:
+        if drone.time_offset > 0 and cur_ts - drone.last_send_ts > 0.03:
             drone.master.mav.att_pos_mocap_send(int(cur_ts * 1000000 - drone.time_offset), rot, x, y, z)
             drone.last_send_ts = cur_ts
     else:
@@ -85,6 +85,10 @@ def main():
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setblocking(False)
+
+    #drones[0].master = mavutil.mavlink_connection(device="udpout:192.168.0.2:14550", source_system=255)
+    #drones[0].master.mav.system_time_send(int(time.time() * 1000000), 0) # ardupilot ignore time_boot_ms 
+    #drones[0].last_sync_time = time.time()
 
     while gogogo:
         try:

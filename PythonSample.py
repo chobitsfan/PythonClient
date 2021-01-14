@@ -83,32 +83,43 @@ def main():
     # This will run perpetually, and operate on a separate thread.
     streamingClient.run()
 
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setblocking(False)
+
     while gogogo:
+        try:
+            data = sock.recv(1024)
+        except socket.error:
+            pass
+        else:
+            for drone in drones:
+                if drone.last_sync_time > 0:
+                    drone.master.write(data)
         for drone in drones:
-            if drone.last_send_ts > 0 or drone.last_sync_time > 0:
+            if drone.last_sync_time > 0:
                 msg = drone.master.recv_msg()
                 if msg is not None:
                     msg_type = msg.get_type()
                     if msg_type == "BAD_DATA":
                         print ("bad [", ":".join("{:02x}".format(c) for c in msg.get_msgbuf()), "]")
                     else:
+                        sock.sendto(msg.get_msgbuf(), ("127.0.0.1", 17500))
                         if msg_type == "HEARTBEAT":
                             print ("[", msg.get_srcSystem(),"] heartbeat", time.time(), "mode", msg.custom_mode)
                         elif msg_type == "STATUSTEXT":
                             print ("[", msg.get_srcSystem(),"]", msg.text)
-                        elif msg_type == "TIMESYNC" and drone.time_offset == 0:
+                        elif msg_type == "TIMESYNC": #and drone.time_offset == 0:
                             if msg.tc1 == 0:
                                 cur_us = time.time() * 1000000
                                 drone.master.mav.timesync_send(int(cur_us), msg.ts1) # ardupilot ignore tc1
-                                #drone.master.mav.timesync_send(0, int(time.time() * 1000000))
                                 drone.time_offset = cur_us - msg.ts1 * 0.001 # ardupilot send ts1 amd tc1 in nano-seconds
                                 print ("[", msg.get_srcSystem(),"] timesync", msg.ts1)
-                            #else:
-                                #cur_us = time.time() * 1000000
-                                #lag_us = (cur_us - msg.ts1) * 0.5
-                                #drone.time_offset = cur_us - msg.tc1 * 0.001 - lag_us # ardupilot send ts1 amd tc1 in nano-seconds
-                                #drone.time_offset = cur_us - msg.tc1 * 0.001
-                                #print ("[", msg.get_srcSystem(),"] network lag", lag_us * 0.001, "ms")
+                            #drone.master.mav.command_long_send(0, 0, 511, 0, 31, 10000, 0, 0, 0, 0, 0)
+                            #drone.master.mav.command_long_send(0, 0, 511, 0, 32, 10000, 0, 0, 0, 0, 0)
+                        #elif msg_type == "ATTITUDE_QUATERNION":
+                        #    cur_ts = time.time()
+                        #    print("att interval", (cur_ts-att_ts)*1000)
+                        #    att_ts=cur_ts
 
     print("bye")
 

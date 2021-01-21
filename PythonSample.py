@@ -118,6 +118,7 @@ def main():
                                 drone.master.mav.timesync_send(int(cur_us), msg.ts1) # ardupilot ignore tc1
                                 drone.time_offset = cur_us - msg.ts1 * 0.001 # ardupilot send ts1 amd tc1 in nano-seconds
                                 print ("[", msg.get_srcSystem(),"] timesync", msg.ts1)
+                                drone.master.mav.set_gps_global_origin_send(0, 247749434, 1210443077, 100000)
                             #drone.master.mav.command_long_send(0, 0, 511, 0, 31, 10000, 0, 0, 0, 0, 0)
                             #drone.master.mav.command_long_send(0, 0, 511, 0, 32, 10000, 0, 0, 0, 0, 0)
                         #elif msg_type == "ATTITUDE_QUATERNION":

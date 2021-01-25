@@ -92,14 +92,12 @@ def main():
 
     while gogogo:
         try:
-            data = sock.recv(1024)
+            data, addr = sock.recvfrom(1024)
         except socket.error:
             pass
         else:
-            for drone in drones:
-                if drone.last_sync_time > 0:
-                    drone.master.write(data)
-        for drone in drones:
+            drones[addr[1]-17500].master.write(data)
+        for idx, drone in enumerate(drones):
             if drone.last_sync_time > 0:
                 msg = drone.master.recv_msg()
                 if msg is not None:
@@ -107,7 +105,7 @@ def main():
                     if msg_type == "BAD_DATA":
                         print ("bad [", ":".join("{:02x}".format(c) for c in msg.get_msgbuf()), "]")
                     else:
-                        sock.sendto(msg.get_msgbuf(), ("127.0.0.1", 17500))
+                        sock.sendto(msg.get_msgbuf(), ("127.0.0.1", 17500+idx))
                         if msg_type == "HEARTBEAT":
                             print ("[", msg.get_srcSystem(),"] heartbeat", time.time(), "mode", msg.custom_mode)
                         elif msg_type == "STATUSTEXT":

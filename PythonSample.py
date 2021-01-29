@@ -85,6 +85,7 @@ def main():
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setblocking(False)
+    sock.bind(("127.0.0.1", 17500))
 
     #drones[0].master = mavutil.mavlink_connection(device="udpout:192.168.0.2:14550", source_system=255)
     #drones[0].master.mav.system_time_send(int(time.time() * 1000000), 0) # ardupilot ignore time_boot_ms 

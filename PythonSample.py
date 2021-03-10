@@ -56,7 +56,7 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
             drone.tracked = True
             print(id, "tracked", cur_ts)
         if drone.master is None:
-            drone.master = mavutil.mavlink_connection(device="udpout:192.168.0."+str(id)+":14550", source_system=255)
+            drone.master = mavutil.mavlink_connection(device="udpout:192.168.50."+str(id+10)+":14550", source_system=255)
         if drone.time_offset == 0 and cur_ts - drone.last_sync_time > 3:
             drone.master.mav.system_time_send(int(cur_ts * 1000000), 0) # ardupilot ignore time_boot_ms 
             drone.last_sync_time = cur_ts
@@ -124,6 +124,8 @@ def main():
                         #    cur_ts = time.time()
                         #    print("att interval", (cur_ts-att_ts)*1000)
                         #    att_ts=cur_ts
+                        else:
+                            print("[", msg.get_srcSystem(),"]", msg_type);
 
     print("bye")
 

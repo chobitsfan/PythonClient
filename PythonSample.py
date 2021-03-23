@@ -25,17 +25,17 @@ from pymavlink import mavutil
 import time, threading
 from scipy import signal as scipy_signal
 from collections import deque
-import socket, signal
+import socket, signal, select
 
 class Drone():
-    def __init__(self):
+    def __init__(self, id):
         self.time_offset = 0
         self.last_send_ts = 0
-        self.last_sync_time = 0
+        self.id = id
         self.tracked = False
-        self.master = None
+        self.master = mavutil.mavlink_connection(device="udpout:192.168.50."+str(id+10)+":14550", source_system=255)
 
-drones = [ Drone() for i in range(10) ]
+drones = [ Drone(i+1) for i in range(10) ]
 gogogo = True
 
 def signal_handler(sig, frame):
@@ -44,27 +44,26 @@ def signal_handler(sig, frame):
 
 # This is a callback function that gets connected to the NatNet client. It is called once per rigid body per frame
 def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
+    drone = drones[id-1]
     if trackingValid:
         #print( "Received frame for rigid body", id , position, rotation )
         x=position[0]
         y=position[2]
         z=-position[1]
         rot=(rotation[3], rotation[0], rotation[2], -rotation[1])
-        drone = drones[id]
         cur_ts = time.time()
         if not drone.tracked:
             drone.tracked = True
             print(id, "tracked", cur_ts)
-        if drone.master is None:
-            drone.master = mavutil.mavlink_connection(device="udpout:192.168.50."+str(id+10)+":14550", source_system=255)
-        if drone.time_offset == 0 and cur_ts - drone.last_sync_time > 3:
-            drone.master.mav.system_time_send(int(cur_ts * 1000000), 0) # ardupilot ignore time_boot_ms 
-            drone.last_sync_time = cur_ts
+        #if drone.master is None:
+        #    drone.master = mavutil.mavlink_connection(device="udpout:192.168.50."+str(id+10)+":14550", source_system=255)
+        #if drone.time_offset == 0 and cur_ts - drone.last_sync_time > 3:
+        #    drone.master.mav.system_time_send(int(cur_ts * 1000000), 0) # ardupilot ignore time_boot_ms 
+        #    drone.last_sync_time = cur_ts
         if drone.time_offset > 0 and cur_ts - drone.last_send_ts > 0.03:
             drone.master.mav.att_pos_mocap_send(int(cur_ts * 1000000 - drone.time_offset), rot, x, y, z)
             drone.last_send_ts = cur_ts
-    else:
-        drone = drones[id]
+    else:        
         if drone.tracked:
             drone.tracked = False
             print(id, "not tracked", time.time())
@@ -83,30 +82,46 @@ def main():
     # This will run perpetually, and operate on a separate thread.
     streamingClient.run()
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setblocking(False)
-    sock.bind(("127.0.0.1", 17500))
+    local_listen_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    local_listen_sock.bind(("127.0.0.1", 17500))
+
+    local_send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
     #drones[0].master = mavutil.mavlink_connection(device="udpout:192.168.0.2:14550", source_system=255)
     #drones[0].master.mav.system_time_send(int(time.time() * 1000000), 0) # ardupilot ignore time_boot_ms 
     #drones[0].last_sync_time = time.time()
 
+    inputs = [local_listen_sock]
+    for drone in drones:
+        inputs.append(drone.master.port)
+
+    last_sys_time_sent = 0;
+
     while gogogo:
-        try:
-            data, addr = sock.recvfrom(1024)
-        except socket.error:
-            pass
-        else:
-            drones[addr[1]-17500].master.write(data)
-        for idx, drone in enumerate(drones):
-            if drone.last_sync_time > 0:
-                msg = drone.master.recv_msg()
+        readables, writables, exceptionals = select.select(inputs, [], [], 10)
+        for readable in readables:
+            idx = inputs.index(readable)
+            if idx == 0:
+                try:
+                    data, addr = readable.recvfrom(1024)
+                except socket.error as err:
+                    print(err)
+                    pass
+                else:
+                    print(addr)
+                    drones[addr[1]-17500-1].master.write(data)
+            else:
+                drone = drones[idx-1]
+                try:
+                    msg = drone.master.recv_msg()
+                except ConnectionResetError:
+                    msg = None
                 if msg is not None:
                     msg_type = msg.get_type()
                     if msg_type == "BAD_DATA":
                         print ("bad [", ":".join("{:02x}".format(c) for c in msg.get_msgbuf()), "]")
                     else:
-                        sock.sendto(msg.get_msgbuf(), ("127.0.0.1", 17500+idx))
+                        local_send_sock.sendto(msg.get_msgbuf(), ("127.0.0.1", 17500+idx))
                         if msg_type == "HEARTBEAT":
                             print ("[", msg.get_srcSystem(),"] heartbeat", time.time(), "mode", msg.custom_mode)
                         elif msg_type == "STATUSTEXT":
@@ -118,14 +133,15 @@ def main():
                                 drone.time_offset = cur_us - msg.ts1 * 0.001 # ardupilot send ts1 amd tc1 in nano-seconds
                                 print ("[", msg.get_srcSystem(),"] timesync", msg.ts1)
                                 drone.master.mav.set_gps_global_origin_send(0, 247749434, 1210443077, 100000)
-                            #drone.master.mav.command_long_send(0, 0, 511, 0, 31, 10000, 0, 0, 0, 0, 0)
-                            #drone.master.mav.command_long_send(0, 0, 511, 0, 32, 10000, 0, 0, 0, 0, 0)
-                        #elif msg_type == "ATTITUDE_QUATERNION":
-                        #    cur_ts = time.time()
-                        #    print("att interval", (cur_ts-att_ts)*1000)
-                        #    att_ts=cur_ts
                         else:
-                            print("[", msg.get_srcSystem(),"]", msg_type);
+                            print("[", msg.get_srcSystem(),"]", msg_type);                
+        cur_ts = time.time()
+        if cur_ts - last_sys_time_sent > 5:
+            last_sys_time_sent = cur_ts
+            for drone in drones:
+                if drone.time_offset == 0:
+                    #print("send system_time to drone", drone.id)
+                    drone.master.mav.system_time_send(int(time.time() * 1000000), 0) # ardupilot ignore time_boot_ms 
 
     print("bye")
 

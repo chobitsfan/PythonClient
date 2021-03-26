@@ -22,10 +22,7 @@ import os
 os.environ['FOR_DISABLE_CONSOLE_CTRL_HANDLER'] = '1'
 from NatNetClient import NatNetClient
 from pymavlink import mavutil
-import time, threading
-from scipy import signal as scipy_signal
-from collections import deque
-import socket, signal, select
+import time, threading, socket, signal, select
 
 class Drone():
     def __init__(self, id):

@@ -79,16 +79,14 @@ def main():
     # This will run perpetually, and operate on a separate thread.
     streamingClient.run()
 
-    local_listen_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    local_listen_sock.bind(("127.0.0.1", 17500))
-
-    local_send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    local_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    local_sock.bind(("127.0.0.1", 17500))
 
     #drones[0].master = mavutil.mavlink_connection(device="udpout:192.168.0.2:14550", source_system=255)
     #drones[0].master.mav.system_time_send(int(time.time() * 1000000), 0) # ardupilot ignore time_boot_ms 
     #drones[0].last_sync_time = time.time()
 
-    inputs = [local_listen_sock]
+    inputs = [local_sock]
     for drone in drones:
         inputs.append(drone.master.port)
 
@@ -102,10 +100,9 @@ def main():
                 try:
                     data, addr = readable.recvfrom(1024)
                 except socket.error as err:
-                    print(err)
-                    pass
+                    if err.errno != 10054:
+                        print(err)
                 else:
-                    print(addr)
                     drones[addr[1]-17500-1].master.write(data)
             else:
                 drone = drones[idx-1]
@@ -118,7 +115,7 @@ def main():
                     if msg_type == "BAD_DATA":
                         print ("bad [", ":".join("{:02x}".format(c) for c in msg.get_msgbuf()), "]")
                     else:
-                        local_send_sock.sendto(msg.get_msgbuf(), ("127.0.0.1", 17500+idx))
+                        local_sock.sendto(msg.get_msgbuf(), ("127.0.0.1", 17500+idx))
                         if msg_type == "HEARTBEAT":
                             print ("[", msg.get_srcSystem(),"] heartbeat", time.time(), "mode", msg.custom_mode)
                         elif msg_type == "STATUSTEXT":
@@ -131,7 +128,8 @@ def main():
                                 print ("[", msg.get_srcSystem(),"] timesync", msg.ts1)
                                 drone.master.mav.set_gps_global_origin_send(0, 247749434, 1210443077, 100000)
                         else:
-                            print("[", msg.get_srcSystem(),"]", msg_type);                
+                            #print("[", msg.get_srcSystem(),"]", msg_type);
+                            pass
         cur_ts = time.time()
         if cur_ts - last_sys_time_sent > 5:
             last_sys_time_sent = cur_ts

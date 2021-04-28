@@ -66,7 +66,7 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
                 drone.last_send_ts = cur_ts
             for others in drones:
                 if others.tracked and others.id != drone.id and ((others.pos[0]-drone.pos[0])**2+(others.pos[1]-drone.pos[1])**2+(others.pos[2]-drone.pos[2])**2)<=0.36:
-                    if cur_ts - drone.last_adsb_ts >= 0.03:
+                    if cur_ts - drone.last_adsb_ts >= 0.02:
                         drone.master.mav.distance_sensor_send(int(cur_ts*1000-drone.time_offset*0.001),0,0,0,0,0,10,0)
                         drone.last_adsb_ts = cur_ts
                         break
@@ -135,8 +135,8 @@ def main():
                             if msg.tc1 == 0: # ardupilot send a timesync message every 10 seconds
                                 cur_us = time.time() * 1000000 # to micro-seconds
                                 drone.master.mav.timesync_send(int(cur_us), msg.ts1) # ardupilot log TSYN if tc1 != 0 and ts1 match
-                                drone.time_offset = cur_us - msg.ts1 * 0.001 # ardupilot send ts1 in nano-seconds, convert to micro-seconds
-                                print ("[", msg.get_srcSystem(),"] timesync", msg.ts1 / 1000000000.0) # print in seconds
+                                drone.time_offset = cur_us - msg.ts1 # I modified ardupilot send ts1 in us instead if ns
+                                print ("[", msg.get_srcSystem(),"] timesync", msg.ts1 / 1000000.0) # print in seconds
                                 drone.master.mav.set_gps_global_origin_send(0, 247749434, 1210443077, 100000)
                         else:
                             #print("[", msg.get_srcSystem(),"]", msg_type);

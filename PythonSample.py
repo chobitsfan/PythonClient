@@ -31,6 +31,8 @@ class Drone():
         self.id = id
         self.tracked = False
         self.master = mavutil.mavlink_connection(device="udpout:192.168.50."+str(id+10)+":14550", source_system=255)
+        self.pos = ()
+        self.last_adsb_ts = 0
 
 drones = [ Drone(i+1) for i in range(10) ]
 gogogo = True
@@ -47,6 +49,7 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
         x=position[0]
         y=position[2]
         z=-position[1]
+        drone.pos = (x,y,z)
         rot=(rotation[3], rotation[0], rotation[2], -rotation[1])
         cur_ts = time.time()
         if not drone.tracked:
@@ -57,9 +60,17 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
         #if drone.time_offset == 0 and cur_ts - drone.last_sync_time > 3:
         #    drone.master.mav.system_time_send(int(cur_ts * 1000000), 0) # ardupilot ignore time_boot_ms 
         #    drone.last_sync_time = cur_ts
-        if drone.time_offset > 0 and cur_ts - drone.last_send_ts >= 0.03:
-            drone.master.mav.att_pos_mocap_send(int(cur_ts * 1000000 - drone.time_offset), rot, x, y, z) # time_usec
-            drone.last_send_ts = cur_ts
+        if drone.time_offset > 0:
+            if cur_ts - drone.last_send_ts >= 0.03:
+                drone.master.mav.att_pos_mocap_send(int(cur_ts * 1000000 - drone.time_offset), rot, x, y, z) # time_usec
+                drone.last_send_ts = cur_ts
+            for others in drones:
+                if others.tracked and others.id != drone.id and ((others.pos[0]-drone.pos[0])**2+(others.pos[1]-drone.pos[1])**2+(others.pos[2]-drone.pos[2])**2)<=0.36:
+                    if cur_ts - drone.last_adsb_ts >= 0.03:
+                        drone.master.mav.distance_sensor_send(int(cur_ts*1000-drone.time_offset*0.001),0,0,0,0,0,10,0)
+                        drone.last_adsb_ts = cur_ts
+                        break
+
     else:        
         if drone.tracked:
             drone.tracked = False

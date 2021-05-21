@@ -22,7 +22,7 @@ import os
 os.environ['FOR_DISABLE_CONSOLE_CTRL_HANDLER'] = '1'
 from NatNetClient import NatNetClient
 from pymavlink import mavutil
-import time, threading, socket, signal, select
+import time, threading, socket, signal, select, math
 
 class Drone():
     def __init__(self, id):
@@ -33,9 +33,33 @@ class Drone():
         self.master = mavutil.mavlink_connection(device="udpout:192.168.50."+str(id+10)+":14550", source_system=255)
         self.pos = ()
         self.last_adsb_ts = 0
+        self.last_debug_ts = 0
 
 drones = [ Drone(i+1) for i in range(10) ]
 gogogo = True
+
+def q_conjugate(q):
+    w, x, y, z = q
+    return (w, -x, -y, -z)
+
+def q_mult(q1, q2):
+    w1, x1, y1, z1 = q1
+    w2, x2, y2, z2 = q2
+    w = w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
+    x = w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2
+    y = w1 * y2 + y1 * w2 + z1 * x2 - x1 * z2
+    z = w1 * z2 + z1 * w2 + x1 * y2 - y1 * x2
+    return w, x, y, z
+
+def qv_mult(q1, v1):
+    q2 = (0.0,) + v1
+    return q_mult(q_mult(q1, q2), q_conjugate(q1))[1:]
+
+def v_2d_dot(v1, v2):
+    return v1[0]*v2[0]+v1[1]*v2[1]
+
+def v_2d_cross(v1, v2):
+    return v1[0]*v2[1]-v1[1]*v2[0]
 
 def signal_handler(sig, frame):
     global gogogo
@@ -60,12 +84,21 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
         #if drone.time_offset == 0 and cur_ts - drone.last_sync_time > 3:
         #    drone.master.mav.system_time_send(int(cur_ts * 1000000), 0) # ardupilot ignore time_boot_ms 
         #    drone.last_sync_time = cur_ts
+        if cur_ts - drone.last_debug_ts > 1:
+            drone.last_debug_ts = cur_ts
+            #print("heading", qv_mult(rot, (1,0,0)))
+            v1 = qv_mult(rot, (1,0,0))
+            for others in drones:
+                if others.tracked and others.id != drone.id:
+                    v2 = (others.pos[0]-drone.pos[0],others.pos[1]-drone.pos[1])
+                    if drone.id == 2:
+                        print("angle", math.atan2(v_2d_cross(v1,v2), v_2d_dot(v1,v2))*180.0/math.pi)
         if drone.time_offset > 0:
             if cur_ts - drone.last_send_ts >= 0.03:
                 drone.master.mav.att_pos_mocap_send(int(cur_ts * 1000000 - drone.time_offset), rot, x, y, z) # time_usec
                 drone.last_send_ts = cur_ts
             for others in drones:
-                if others.tracked and others.id != drone.id and ((others.pos[0]-drone.pos[0])**2+(others.pos[1]-drone.pos[1])**2+(others.pos[2]-drone.pos[2])**2)<=0.36:
+                if others.tracked and others.id != drone.id and ((others.pos[0]-drone.pos[0])**2+(others.pos[1]-drone.pos[1])**2)<=0.64 and abs(others.pos[2]-drone.pos[2])<0.3:
                     if cur_ts - drone.last_adsb_ts >= 0.02:
                         drone.master.mav.distance_sensor_send(int(cur_ts*1000-drone.time_offset*0.001),0,0,0,0,0,10,0)
                         drone.last_adsb_ts = cur_ts
@@ -101,7 +134,7 @@ def main():
     for drone in drones:
         inputs.append(drone.master.port)
 
-    last_sys_time_sent = 0;
+    last_sys_time_sent = 0
 
     while gogogo:
         readables, writables, exceptionals = select.select(inputs, [], [], 10)

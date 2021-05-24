@@ -84,22 +84,24 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
         #if drone.time_offset == 0 and cur_ts - drone.last_sync_time > 3:
         #    drone.master.mav.system_time_send(int(cur_ts * 1000000), 0) # ardupilot ignore time_boot_ms 
         #    drone.last_sync_time = cur_ts
-        if cur_ts - drone.last_debug_ts > 1:
-            drone.last_debug_ts = cur_ts
-            #print("heading", qv_mult(rot, (1,0,0)))
-            v1 = qv_mult(rot, (1,0,0))
-            for others in drones:
-                if others.tracked and others.id != drone.id:
-                    v2 = (others.pos[0]-drone.pos[0],others.pos[1]-drone.pos[1])
-                    if drone.id == 2:
-                        angle = math.atan2(v_2d_cross(v1,v2), v_2d_dot(v1,v2))
-                        #print("angle", angle*180.0/math.pi)
-                        if angle < 0:
-                            angle = angle + 2 * math.pi
-                        sector = int((angle / (2 * math.pi / 16) + 1) / 2)
-                        if sector == 8:
-                            sector = 0
-                        #print("sector", sector)
+
+        # if cur_ts - drone.last_debug_ts > 1:
+        #     drone.last_debug_ts = cur_ts
+        #     print("heading", qv_mult(rot, (1,0,0)))
+        #     v1 = qv_mult(rot, (1,0,0))
+        #     for others in drones:
+        #         if others.tracked and others.id != drone.id:
+        #             v2 = (others.pos[0]-drone.pos[0],others.pos[1]-drone.pos[1])
+        #             if drone.id == 2:
+        #                 angle = math.atan2(v_2d_cross(v1,v2), v_2d_dot(v1,v2))
+        #                 print("angle", angle*180.0/math.pi)
+        #                 if angle < 0:
+        #                     angle = angle + 2 * math.pi
+        #                 sector = int((angle / (2 * math.pi / 16) + 1) / 2)
+        #                 if sector == 8:
+        #                     sector = 0
+        #                 print("sector", sector)
+
         if drone.time_offset > 0:
             if cur_ts - drone.last_send_ts >= 0.03:
                 drone.master.mav.att_pos_mocap_send(int(cur_ts * 1000000 - drone.time_offset), rot, x, y, z) # time_usec
@@ -107,7 +109,15 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
             for others in drones:
                 if others.tracked and others.id != drone.id and ((others.pos[0]-drone.pos[0])**2+(others.pos[1]-drone.pos[1])**2)<=0.64 and abs(others.pos[2]-drone.pos[2])<0.3:
                     if cur_ts - drone.last_adsb_ts >= 0.02:
-                        drone.master.mav.distance_sensor_send(int(cur_ts*1000-drone.time_offset*0.001),0,0,0,0,0,10,0)
+                        v1 = qv_mult(rot, (1,0,0))
+                        v2 = (others.pos[0]-drone.pos[0],others.pos[1]-drone.pos[1])
+                        angle = math.atan2(v_2d_cross(v1,v2), v_2d_dot(v1,v2))
+                        if angle < 0:
+                            angle = angle + 2 * math.pi
+                        sector = int((angle / (2 * math.pi / 16) + 1) / 2)
+                        if sector == 8:
+                            sector = 0
+                        drone.master.mav.distance_sensor_send(int(cur_ts*1000-drone.time_offset*0.001),0,0,0,10,0,sector,0)
                         drone.last_adsb_ts = cur_ts
                         break
 

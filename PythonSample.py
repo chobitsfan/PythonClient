@@ -92,7 +92,14 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
                 if others.tracked and others.id != drone.id:
                     v2 = (others.pos[0]-drone.pos[0],others.pos[1]-drone.pos[1])
                     if drone.id == 2:
-                        print("angle", math.atan2(v_2d_cross(v1,v2), v_2d_dot(v1,v2))*180.0/math.pi)
+                        angle = math.atan2(v_2d_cross(v1,v2), v_2d_dot(v1,v2))
+                        #print("angle", angle*180.0/math.pi)
+                        if angle < 0:
+                            angle = angle + 2 * math.pi
+                        sector = int((angle / (2 * math.pi / 16) + 1) / 2)
+                        if sector == 8:
+                            sector = 0
+                        #print("sector", sector)
         if drone.time_offset > 0:
             if cur_ts - drone.last_send_ts >= 0.03:
                 drone.master.mav.att_pos_mocap_send(int(cur_ts * 1000000 - drone.time_offset), rot, x, y, z) # time_usec

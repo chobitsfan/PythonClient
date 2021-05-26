@@ -106,18 +106,18 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
             if cur_ts - drone.last_send_ts >= 0.03:
                 drone.master.mav.att_pos_mocap_send(int(cur_ts * 1000000 - drone.time_offset), rot, x, y, z) # time_usec
                 drone.last_send_ts = cur_ts
-            for others in drones:
-                if others.tracked and others.id != drone.id and ((others.pos[0]-drone.pos[0])**2+(others.pos[1]-drone.pos[1])**2)<=0.64 and abs(others.pos[2]-drone.pos[2])<0.3:
+            for opponent in drones:
+                if opponent.tracked and opponent.id != drone.id and ((opponent.pos[0]-drone.pos[0])**2+(opponent.pos[1]-drone.pos[1])**2)<=0.64 and abs(opponent.pos[2]-drone.pos[2])<0.3:
                     if cur_ts - drone.last_adsb_ts >= 0.02:
                         v1 = qv_mult(rot, (1,0,0))
-                        v2 = (others.pos[0]-drone.pos[0],others.pos[1]-drone.pos[1])
+                        v2 = (opponent.pos[0]-drone.pos[0],opponent.pos[1]-drone.pos[1])
                         angle = math.atan2(v_2d_cross(v1,v2), v_2d_dot(v1,v2))
                         if angle < 0:
                             angle = angle + 2 * math.pi
                         sector = int((angle / (2 * math.pi / 16) + 1) / 2)
                         if sector == 8:
                             sector = 0
-                        drone.master.mav.distance_sensor_send(int(cur_ts*1000-drone.time_offset*0.001),0,0,0,10,0,sector,0)
+                        drone.master.mav.distance_sensor_send(int(cur_ts*1000-drone.time_offset*0.001),int(opponent.pos[0]*100+1000),int(opponent.pos[1]*100+1000),0,10,0,sector,0)
                         drone.last_adsb_ts = cur_ts
                         break
 

@@ -18,11 +18,11 @@
 # Uses the Python NatNetClient.py library to establish a connection (by creating a NatNetClient),
 # and receive data via a NatNet connection and decode it using the NatNetClient library.
 
-import os
-os.environ['FOR_DISABLE_CONSOLE_CTRL_HANDLER'] = '1'
+#import os
+#os.environ['FOR_DISABLE_CONSOLE_CTRL_HANDLER'] = '1'
 from NatNetClient import NatNetClient
 from pymavlink import mavutil
-import time, threading, socket, signal, select, math
+import time, socket, signal, select, math
 
 class Drone():
     def __init__(self, id):
@@ -34,6 +34,7 @@ class Drone():
         self.pos = ()
         self.last_adsb_ts = 0
         self.last_debug_ts = 0
+        self.lastPos = ()
 
 drones = [ Drone(i+1) for i in range(10) ]
 gogogo = True
@@ -104,7 +105,15 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
 
         if drone.time_offset > 0:
             if cur_ts - drone.last_send_ts >= 0.03:
-                drone.master.mav.att_pos_mocap_send(int(cur_ts * 1000000 - drone.time_offset), rot, x, y, z) # time_usec
+                if drone.lastPos:
+                    m = drone.master.mav.att_pos_mocap_encode(int(cur_ts * 1000000 - drone.time_offset), rot, x, y, z) # time_usec
+                    m.pack(drone.master.mav)
+                    b = m.get_msgbuf()
+                    elapsed_sec = cur_ts - drone.last_send_ts
+                    m = drone.master.mav.vision_speed_estimate_encode(int(cur_ts * 1000000 - drone.time_offset), (x-drone.lastPos[0])/elapsed_sec, (y-drone.lastPos[1])/elapsed_sec, (z-drone.lastPos[2])/elapsed_sec)
+                    m.pack(drone.master.mav)
+                    drone.master.write(b+m.get_msgbuf())
+                drone.lastPos = (x,y,z)
                 drone.last_send_ts = cur_ts
             for opponent in drones:
                 if opponent.tracked and opponent.id != drone.id and ((opponent.pos[0]-drone.pos[0])**2+(opponent.pos[1]-drone.pos[1])**2)<=0.64 and abs(opponent.pos[2]-drone.pos[2])<0.3:
@@ -138,7 +147,7 @@ def main():
 
     # Start up the streaming client now that the callbacks are set up.
     # This will run perpetually, and operate on a separate thread.
-    streamingClient.run()
+    streamingClient.myinit()
 
     local_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     local_sock.bind(("127.0.0.1", 17500))
@@ -147,26 +156,34 @@ def main():
     #drones[0].master.mav.system_time_send(int(time.time() * 1000000), 0) # ardupilot ignore time_boot_ms 
     #drones[0].last_sync_time = time.time()
 
-    inputs = [local_sock]
+    inputs = []
     for drone in drones:
         inputs.append(drone.master.port)
+    inputs.append(local_sock)
+    inputs.append(streamingClient.commandSocket)
+    inputs.append(streamingClient.dataSocket)
 
     last_sys_time_sent = 0
 
     while gogogo:
         readables, writables, exceptionals = select.select(inputs, [], [], 10)
         for readable in readables:
-            idx = inputs.index(readable)
-            if idx == 0:
+            if readable == local_sock:
                 try:
                     data, addr = readable.recvfrom(1024)
                 except socket.error as err:
                     if err.errno != 10054:
                         print(err)
                 else:
-                    drones[addr[1]-17500-1].master.write(data)
+                    if(len(data) > 0):
+                        drones[addr[1]-17500-1].master.write(data)
+            elif readable == streamingClient.commandSocket or readable == streamingClient.dataSocket:
+                data = readable.recv( 32768 ) # 32k byte buffer size
+                if( len( data ) > 0 ):
+                    streamingClient.processMessage( data )
             else:
-                drone = drones[idx-1]
+                idx = inputs.index(readable)
+                drone = drones[idx]
                 try:
                     msg = drone.master.recv_msg()
                 except ConnectionResetError:
@@ -176,7 +193,7 @@ def main():
                     if msg_type == "BAD_DATA":
                         print ("bad [", ":".join("{:02x}".format(c) for c in msg.get_msgbuf()), "]")
                     else:
-                        local_sock.sendto(msg.get_msgbuf(), ("127.0.0.1", 17500+idx))
+                        local_sock.sendto(msg.get_msgbuf(), ("127.0.0.1", 17500+idx+1))
                         if msg_type == "HEARTBEAT":
                             print ("[", msg.get_srcSystem(),"] heartbeat", time.time(), "mode", msg.custom_mode)
                         elif msg_type == "STATUSTEXT":

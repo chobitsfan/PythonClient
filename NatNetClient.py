@@ -429,9 +429,9 @@ class NatNetClient:
             # Block for input
             data, addr = socket.recvfrom( 32768 ) # 32k byte buffer size
             if( len( data ) > 0 ):
-                self.__processMessage( data )
+                self.processMessage( data )
 
-    def __processMessage( self, data ):
+    def processMessage( self, data ):
         trace( "Begin Packet\n------------\n" )
 
         messageID = int.from_bytes( data[0:2], byteorder='little' )
@@ -508,5 +508,20 @@ class NatNetClient:
         # Create a separate thread for receiving command packets
         commandThread = Thread( target = self.__dataThreadFunction, args = (self.commandSocket, ), daemon=True)
         commandThread.start()
+
+        self.sendCommand( self.NAT_REQUEST_MODELDEF, "", self.commandSocket, (self.serverIPAddress, self.commandPort) )
+
+    def myinit( self ):
+        # Create the data socket
+        self.dataSocket = self.__createDataSocket( self.dataPort )
+        if( self.dataSocket is None ):
+            print( "Could not open data channel" )
+            exit
+
+        # Create the command socket
+        self.commandSocket = self.__createCommandSocket()
+        if( self.commandSocket is None ):
+            print( "Could not open command channel" )
+            exit
 
         self.sendCommand( self.NAT_REQUEST_MODELDEF, "", self.commandSocket, (self.serverIPAddress, self.commandPort) )

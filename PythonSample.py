@@ -104,7 +104,7 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
         #                 print("sector", sector)
 
         if drone.time_offset > 0:
-            if cur_ts - drone.last_send_ts >= 0.03:
+            if cur_ts - drone.last_send_ts >= 0.04:
                 if drone.lastPos:
                     m = drone.master.mav.att_pos_mocap_encode(int(cur_ts * 1000000 - drone.time_offset), rot, x, y, z) # time_usec
                     m.pack(drone.master.mav)
@@ -115,21 +115,21 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
                     drone.master.write(b+m.get_msgbuf())
                 drone.lastPos = (x,y,z)
                 drone.last_send_ts = cur_ts
-            for opponent in drones:
-                if opponent.tracked and opponent.id != drone.id and ((opponent.pos[0]-drone.pos[0])**2+(opponent.pos[1]-drone.pos[1])**2)<=0.64 and abs(opponent.pos[2]-drone.pos[2])<0.3:
-                    if cur_ts - drone.last_adsb_ts >= 0.02:
-                        v1 = qv_mult(rot, (1,0,0))
-                        v2 = (opponent.pos[0]-drone.pos[0],opponent.pos[1]-drone.pos[1])
-                        angle = math.atan2(v_2d_cross(v1,v2), v_2d_dot(v1,v2))
-                        if angle < 0:
-                            angle = angle + 2 * math.pi
-                        sector = int((angle / (2 * math.pi / 16) + 1) / 2)
-                        if sector == 8:
-                            sector = 0
-                        drone.master.mav.distance_sensor_send(int(cur_ts*1000-drone.time_offset*0.001),int(opponent.pos[0]*100+1000),int(opponent.pos[1]*100+1000),0,10,0,sector,0)
-                        drone.last_adsb_ts = cur_ts
-                        break
-
+            # drone avoid is not used in ncsist
+            # for opponent in drones:
+            #     if opponent.tracked and opponent.id != drone.id and ((opponent.pos[0]-drone.pos[0])**2+(opponent.pos[1]-drone.pos[1])**2)<=0.64 and abs(opponent.pos[2]-drone.pos[2])<0.3:
+            #         if cur_ts - drone.last_adsb_ts >= 0.02:
+            #             v1 = qv_mult(rot, (1,0,0))
+            #             v2 = (opponent.pos[0]-drone.pos[0],opponent.pos[1]-drone.pos[1])
+            #             angle = math.atan2(v_2d_cross(v1,v2), v_2d_dot(v1,v2))
+            #             if angle < 0:
+            #                 angle = angle + 2 * math.pi
+            #             sector = int((angle / (2 * math.pi / 16) + 1) / 2)
+            #             if sector == 8:
+            #                 sector = 0
+            #             drone.master.mav.distance_sensor_send(int(cur_ts*1000-drone.time_offset*0.001),int(opponent.pos[0]*100+1000),int(opponent.pos[1]*100+1000),0,10,0,sector,0)
+            #             drone.last_adsb_ts = cur_ts
+            #             break
     else:        
         if drone.tracked:
             drone.tracked = False
@@ -163,7 +163,7 @@ def main():
     inputs.append(streamingClient.commandSocket)
     inputs.append(streamingClient.dataSocket)
 
-    last_sys_time_sent = 0
+    last_hb_send_ts = 0
 
     while gogogo:
         readables, writables, exceptionals = select.select(inputs, [], [], 10)
@@ -178,9 +178,14 @@ def main():
                     if(len(data) > 0):
                         drones[addr[1]-17500-1].master.write(data)
             elif readable == streamingClient.commandSocket or readable == streamingClient.dataSocket:
-                data = readable.recv( 32768 ) # 32k byte buffer size
-                if( len( data ) > 0 ):
-                    streamingClient.processMessage( data )
+                try:
+                    data = readable.recv( 32768 ) # 32k byte buffer size
+                except socket.error as err:
+                    if err.errno != 10054:
+                        print(err)
+                else:
+                    if( len( data ) > 0 ):
+                        streamingClient.processMessage( data )
             else:
                 idx = inputs.index(readable)
                 drone = drones[idx]
@@ -209,11 +214,16 @@ def main():
                             #print("[", msg.get_srcSystem(),"]", msg_type);
                             pass
         cur_ts = time.time()
-        if cur_ts - last_sys_time_sent > 5:
-            last_sys_time_sent = cur_ts
+        #if cur_ts - last_sys_time_sent > 5:
+        #    last_sys_time_sent = cur_ts
+        #    for drone in drones:
+        #        if drone.time_offset == 0:
+        #            drone.master.mav.system_time_send(int(time.time() * 1000000), 0) # ardupilot ignore time_boot_ms 
+        if cur_ts - last_hb_send_ts > 3:
+            last_hb_send_ts = cur_ts
             for drone in drones:
+                drone.master.mav.heartbeat_send(6, 0, 0, 0, 0)
                 if drone.time_offset == 0:
-                    #print("send system_time to drone", drone.id)
                     drone.master.mav.system_time_send(int(time.time() * 1000000), 0) # ardupilot ignore time_boot_ms 
 
     print("bye")

@@ -22,7 +22,9 @@
 #os.environ['FOR_DISABLE_CONSOLE_CTRL_HANDLER'] = '1'
 from NatNetClient import NatNetClient
 from pymavlink import mavutil
-import time, socket, signal, select, math
+import time, socket, select
+
+DRONE_NETWORK = "192.168.50."
 
 class Drone():
     def __init__(self, id):
@@ -30,14 +32,13 @@ class Drone():
         self.last_send_ts = 0
         self.id = id
         self.tracked = False
-        self.master = mavutil.mavlink_connection(device="udpout:192.168.50."+str(id+10)+":14550", source_system=255)
+        self.master = mavutil.mavlink_connection(device="udpout:"+DRONE_NETWORK+str(id+10)+":14550", source_system=255)
         self.pos = ()
         self.last_adsb_ts = 0
         self.last_debug_ts = 0
         self.lastPos = ()
 
 drones = [ Drone(i+1) for i in range(10) ]
-gogogo = True
 
 def q_conjugate(q):
     w, x, y, z = q
@@ -61,10 +62,6 @@ def v_2d_dot(v1, v2):
 
 def v_2d_cross(v1, v2):
     return v1[0]*v2[1]-v1[1]*v2[0]
-
-def signal_handler(sig, frame):
-    global gogogo
-    gogogo = False
 
 # This is a callback function that gets connected to the NatNet client. It is called once per rigid body per frame
 def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
@@ -136,7 +133,7 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
             print(id, "not tracked", time.time())
 
 def main():
-    signal.signal(signal.SIGINT, signal_handler)
+    print("hello")
 
     # This will create a new NatNet client
     streamingClient = NatNetClient()
@@ -165,66 +162,69 @@ def main():
 
     last_hb_send_ts = 0
 
-    while gogogo:
-        readables, writables, exceptionals = select.select(inputs, [], [], 10)
-        for readable in readables:
-            if readable == local_sock:
-                try:
-                    data, addr = readable.recvfrom(1024)
-                except socket.error as err:
-                    if err.errno != 10054:
-                        print(err)
-                else:
-                    if(len(data) > 0):
-                        drones[addr[1]-17500-1].master.write(data)
-            elif readable == streamingClient.commandSocket or readable == streamingClient.dataSocket:
-                try:
-                    data = readable.recv( 32768 ) # 32k byte buffer size
-                except socket.error as err:
-                    if err.errno != 10054:
-                        print(err)
-                else:
-                    if( len( data ) > 0 ):
-                        streamingClient.processMessage( data )
-            else:
-                idx = inputs.index(readable)
-                drone = drones[idx]
-                try:
-                    msg = drone.master.recv_msg()
-                except ConnectionResetError:
-                    msg = None
-                if msg is not None:
-                    msg_type = msg.get_type()
-                    if msg_type == "BAD_DATA":
-                        print ("bad [", ":".join("{:02x}".format(c) for c in msg.get_msgbuf()), "]")
+    while True:
+        try:
+            readables, writables, exceptionals = select.select(inputs, [], [], 10)
+            for readable in readables:
+                if readable == local_sock:
+                    try:
+                        data, addr = readable.recvfrom(1024)
+                    except socket.error as err:
+                        if err.errno != 10054:
+                            print(err)
                     else:
-                        local_sock.sendto(msg.get_msgbuf(), ("127.0.0.1", 17500+idx+1))
-                        if msg_type == "HEARTBEAT":
-                            print ("[", msg.get_srcSystem(),"] heartbeat", time.time(), "mode", msg.custom_mode)
-                        elif msg_type == "STATUSTEXT":
-                            print ("[", msg.get_srcSystem(),"]", msg.text)
-                        elif msg_type == "TIMESYNC":
-                            if msg.tc1 == 0: # ardupilot send a timesync message every 10 seconds
-                                cur_us = time.time() * 1000000 # to micro-seconds
-                                drone.master.mav.timesync_send(int(cur_us), msg.ts1) # ardupilot log TSYN if tc1 != 0 and ts1 match
-                                drone.time_offset = cur_us - msg.ts1 # I modified ardupilot send ts1 in us instead if ns
-                                print ("[", msg.get_srcSystem(),"] timesync", msg.ts1 / 1000000.0) # print in seconds
-                                drone.master.mav.set_gps_global_origin_send(0, 247749434, 1210443077, 100000)
+                        if(len(data) > 0):
+                            drones[addr[1]-17500-1].master.write(data)
+                elif readable == streamingClient.commandSocket or readable == streamingClient.dataSocket:
+                    try:
+                        data = readable.recv( 32768 ) # 32k byte buffer size
+                    except socket.error as err:
+                        if err.errno != 10054:
+                            print(err)
+                    else:
+                        if(len(data) > 0):
+                            streamingClient.processMessage( data )
+                else:
+                    idx = inputs.index(readable)
+                    drone = drones[idx]
+                    try:
+                        msg = drone.master.recv_msg()
+                    except ConnectionResetError:
+                        msg = None
+                    if msg is not None:
+                        msg_type = msg.get_type()
+                        if msg_type == "BAD_DATA":
+                            print ("bad [", ":".join("{:02x}".format(c) for c in msg.get_msgbuf()), "]")
                         else:
-                            #print("[", msg.get_srcSystem(),"]", msg_type);
-                            pass
-        cur_ts = time.time()
-        #if cur_ts - last_sys_time_sent > 5:
-        #    last_sys_time_sent = cur_ts
-        #    for drone in drones:
-        #        if drone.time_offset == 0:
-        #            drone.master.mav.system_time_send(int(time.time() * 1000000), 0) # ardupilot ignore time_boot_ms 
-        if cur_ts - last_hb_send_ts > 3:
-            last_hb_send_ts = cur_ts
-            for drone in drones:
-                drone.master.mav.heartbeat_send(6, 0, 0, 0, 0)
-                if drone.time_offset == 0:
-                    drone.master.mav.system_time_send(int(time.time() * 1000000), 0) # ardupilot ignore time_boot_ms 
+                            local_sock.sendto(msg.get_msgbuf(), ("127.0.0.1", 17500+idx+1))
+                            if msg_type == "HEARTBEAT":
+                                print ("[", msg.get_srcSystem(),"] heartbeat", time.time(), "mode", msg.custom_mode)
+                            elif msg_type == "STATUSTEXT":
+                                print ("[", msg.get_srcSystem(),"]", msg.text)
+                            elif msg_type == "TIMESYNC":
+                                if msg.tc1 == 0: # ardupilot send a timesync message every 10 seconds
+                                    cur_us = time.time() * 1000000 # to micro-seconds
+                                    drone.master.mav.timesync_send(int(cur_us), msg.ts1) # ardupilot log TSYN if tc1 != 0 and ts1 match
+                                    drone.time_offset = cur_us - msg.ts1 # I modified ardupilot send ts1 in us instead if ns
+                                    print ("[", msg.get_srcSystem(),"] timesync", msg.ts1 / 1000000.0) # print in seconds
+                                    drone.master.mav.set_gps_global_origin_send(0, 247749434, 1210443077, 100000)
+                            else:
+                                #print("[", msg.get_srcSystem(),"]", msg_type);
+                                pass
+            cur_ts = time.time()
+            #if cur_ts - last_sys_time_sent > 5:
+            #    last_sys_time_sent = cur_ts
+            #    for drone in drones:
+            #        if drone.time_offset == 0:
+            #            drone.master.mav.system_time_send(int(time.time() * 1000000), 0) # ardupilot ignore time_boot_ms 
+            if cur_ts - last_hb_send_ts > 3:
+                last_hb_send_ts = cur_ts
+                for drone in drones:
+                    drone.master.mav.heartbeat_send(6, 0, 0, 0, 0)
+                    if drone.time_offset == 0:
+                        drone.master.mav.system_time_send(int(time.time() * 1000000), 0) # ardupilot ignore time_boot_ms 
+        except KeyboardInterrupt:
+            break
 
     print("bye")
 

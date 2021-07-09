@@ -37,8 +37,11 @@ class Drone():
         self.last_adsb_ts = 0
         self.last_debug_ts = 0
         self.lastPos = ()
+        self.last_unity_send_ts = 0
 
 drones = [ Drone(i+1) for i in range(10) ]
+local_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+local_sock.bind(("127.0.0.1", 17500))
 
 def q_conjugate(q):
     w, x, y, z = q
@@ -100,6 +103,12 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
         #                     sector = 0
         #                 print("sector", sector)
 
+        if cur_ts - drone.last_unity_send_ts >= 0.02:
+            m = drone.master.mav.att_pos_mocap_encode(0, (rotation[3], rotation[0], rotation[1], rotation[2]), position[0], position[1], position[2])
+            m.pack(drone.master.mav)
+            local_sock.sendto(m.get_msgbuf(), ("127.0.0.1", 17500+id))
+            drone.last_unity_send_ts = cur_ts
+
         if drone.time_offset > 0:
             if cur_ts - drone.last_send_ts >= 0.04:
                 if drone.lastPos:
@@ -145,9 +154,6 @@ def main():
     # Start up the streaming client now that the callbacks are set up.
     # This will run perpetually, and operate on a separate thread.
     streamingClient.myinit()
-
-    local_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    local_sock.bind(("127.0.0.1", 17500))
 
     #drones[0].master = mavutil.mavlink_connection(device="udpout:192.168.0.2:14550", source_system=255)
     #drones[0].master.mav.system_time_send(int(time.time() * 1000000), 0) # ardupilot ignore time_boot_ms 

@@ -24,7 +24,18 @@ from NatNetClient import NatNetClient
 from pymavlink import mavutil
 import time, socket, select
 
-DRONE_NETWORK = "192.168.50."
+print("hello")
+
+drone_network = "192.168.50."
+unity_pc = "127.0.0.1"
+try:
+    with open('ip.txt','r') as setup_file:
+        unity_pc = setup_file.readline().rstrip()
+        drone_network = setup_file.readline().rstrip()
+except FileNotFoundError:
+    pass
+print('unity run in [', unity_pc,']')
+print('drone network [', drone_network,']')
 
 class Drone():
     def __init__(self, id):
@@ -32,7 +43,7 @@ class Drone():
         self.last_send_ts = 0
         self.id = id
         self.tracked = False
-        self.master = mavutil.mavlink_connection(device="udpout:"+DRONE_NETWORK+str(id+10)+":14550", source_system=255)
+        self.master = mavutil.mavlink_connection(device="udpout:"+drone_network+str(id+10)+":14550", source_system=255)
         self.pos = ()
         self.last_adsb_ts = 0
         self.last_debug_ts = 0
@@ -41,7 +52,7 @@ class Drone():
 
 drones = [ Drone(i+1) for i in range(10) ]
 local_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-local_sock.bind(("127.0.0.1", 17500))
+local_sock.bind(("0.0.0.0", 17500))
 
 def q_conjugate(q):
     w, x, y, z = q
@@ -103,10 +114,10 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
         #                     sector = 0
         #                 print("sector", sector)
 
-        if cur_ts - drone.last_unity_send_ts >= 0.02:
+        if cur_ts - drone.last_unity_send_ts >= 0.05:
             m = drone.master.mav.att_pos_mocap_encode(0, (rotation[3], rotation[0], rotation[1], rotation[2]), position[0], position[1], position[2])
             m.pack(drone.master.mav)
-            local_sock.sendto(m.get_msgbuf(), ("127.0.0.1", 17500+id))
+            local_sock.sendto(m.get_msgbuf(), (unity_pc, 17500+id))
             drone.last_unity_send_ts = cur_ts
 
         if drone.time_offset > 0:
@@ -142,8 +153,6 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
             print(id, "not tracked", time.time())
 
 def main():
-    print("hello")
-
     # This will create a new NatNet client
     streamingClient = NatNetClient()
 
@@ -202,7 +211,7 @@ def main():
                         if msg_type == "BAD_DATA":
                             print ("bad [", ":".join("{:02x}".format(c) for c in msg.get_msgbuf()), "]")
                         else:
-                            local_sock.sendto(msg.get_msgbuf(), ("127.0.0.1", 17500+idx+1))
+                            local_sock.sendto(msg.get_msgbuf(), (unity_pc, 17500+idx+1))
                             if msg_type == "HEARTBEAT":
                                 print ("[", msg.get_srcSystem(),"] heartbeat", time.time(), "mode", msg.custom_mode)
                             elif msg_type == "STATUSTEXT":

@@ -27,14 +27,15 @@ import time, socket, select
 print("hello")
 
 drone_network = "192.168.50."
-unity_pc = "127.0.0.1"
+mygcs_ip = "127.0.0.1"
 try:
-    with open('ip.txt','r') as setup_file:
-        unity_pc = setup_file.readline().rstrip()
-        drone_network = setup_file.readline().rstrip()
+    with open('drone_net.txt','r') as f:
+        drone_network = f.read().strip()
+    with open('gcs_ip.txt','r') as f:
+        mygcs_ip = f.read().strip()
 except FileNotFoundError:
     pass
-print('unity run in [', unity_pc,']')
+print('GCS ip [', mygcs_ip,']')
 print('drone network [', drone_network,']')
 
 class Drone():
@@ -117,7 +118,7 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
         if cur_ts - drone.last_unity_send_ts >= 0.05:
             m = drone.master.mav.att_pos_mocap_encode(0, (rotation[3], rotation[0], rotation[1], rotation[2]), position[0], position[1], position[2])
             m.pack(drone.master.mav)
-            local_sock.sendto(m.get_msgbuf(), (unity_pc, 17500+id))
+            local_sock.sendto(m.get_msgbuf(), (mygcs_ip, 17500+id))
             drone.last_unity_send_ts = cur_ts
 
         if drone.time_offset > 0:
@@ -211,7 +212,7 @@ def main():
                         if msg_type == "BAD_DATA":
                             print ("bad [", ":".join("{:02x}".format(c) for c in msg.get_msgbuf()), "]")
                         else:
-                            local_sock.sendto(msg.get_msgbuf(), (unity_pc, 17500+idx+1))
+                            local_sock.sendto(msg.get_msgbuf(), (mygcs_ip, 17500+idx+1))
                             if msg_type == "HEARTBEAT":
                                 print ("[", msg.get_srcSystem(),"] heartbeat", time.time(), "mode", msg.custom_mode)
                             elif msg_type == "STATUSTEXT":

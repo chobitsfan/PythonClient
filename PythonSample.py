@@ -27,15 +27,12 @@ import time, socket, select
 print("hello")
 
 drone_network = "192.168.50."
-mygcs_ip = "127.0.0.1"
+all_mygcs_ip = []
 try:
     with open('drone_net.txt','r') as f:
         drone_network = f.read().strip()
-    with open('gcs_ip.txt','r') as f:
-        mygcs_ip = f.read().strip()
 except FileNotFoundError:
     pass
-print('GCS ip [', mygcs_ip,']')
 print('drone network [', drone_network,']')
 
 class Drone():
@@ -115,10 +112,11 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
         #                     sector = 0
         #                 print("sector", sector)
 
-        if cur_ts - drone.last_unity_send_ts >= 0.05:
+        if cur_ts - drone.last_unity_send_ts >= 0.015:
             m = drone.master.mav.att_pos_mocap_encode(0, (rotation[3], rotation[0], rotation[1], rotation[2]), position[0], position[1], position[2])
             m.pack(drone.master.mav)
-            local_sock.sendto(m.get_msgbuf(), (mygcs_ip, 17500+id))
+            for mygcs_ip in all_mygcs_ip:
+                local_sock.sendto(m.get_msgbuf(), (mygcs_ip, 17500+id))
             drone.last_unity_send_ts = cur_ts
 
         if drone.time_offset > 0:
@@ -189,6 +187,9 @@ def main():
                         if err.errno != 10054:
                             print(err)
                     else:
+                        if addr[0] not in all_mygcs_ip:
+                            print("new client",addr)
+                            all_mygcs_ip.append(addr[0])
                         if(len(data) > 0):
                             drones[addr[1]-17500-1].master.write(data)
                 elif readable == streamingClient.commandSocket or readable == streamingClient.dataSocket:
@@ -212,7 +213,8 @@ def main():
                         if msg_type == "BAD_DATA":
                             print ("bad [", ":".join("{:02x}".format(c) for c in msg.get_msgbuf()), "]")
                         else:
-                            local_sock.sendto(msg.get_msgbuf(), (mygcs_ip, 17500+idx+1))
+                            for mygcs_ip in all_mygcs_ip:
+                                local_sock.sendto(msg.get_msgbuf(), (mygcs_ip, 17500+idx+1))
                             if msg_type == "HEARTBEAT":
                                 print ("[", msg.get_srcSystem(),"] heartbeat", time.time(), "mode", msg.custom_mode)
                             elif msg_type == "STATUSTEXT":

@@ -51,6 +51,8 @@ class Drone():
 drones = [ Drone(i+1) for i in range(10) ]
 local_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 local_sock.bind(("0.0.0.0", 17500))
+game_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+game_sock.bind(("0.0.0.0", 27500))
 
 def q_conjugate(q):
     w, x, y, z = q
@@ -173,6 +175,7 @@ def main():
     inputs.append(local_sock)
     inputs.append(streamingClient.commandSocket)
     inputs.append(streamingClient.dataSocket)
+    inputs.append(game_sock)
 
     last_hb_send_ts = 0
 
@@ -187,11 +190,22 @@ def main():
                         if err.errno != 10054:
                             print(err)
                     else:
-                        if addr[0] not in all_mygcs_ip:
-                            print("new client",addr)
-                            all_mygcs_ip.append(addr[0])
                         if(len(data) > 0):
                             drones[addr[1]-17500-1].master.write(data)
+                elif readable == game_sock:
+                    try:
+                        data, addr = readable.recvfrom(1024)
+                    except socket.error as err:
+                        if err.errno != 10054:
+                            print(err)
+                    else:
+                        if addr[0] not in all_mygcs_ip:
+                            print("new client", addr)
+                            all_mygcs_ip.append(addr[0])
+                        if(len(data) > 0):
+                            for mygcs_ip in all_mygcs_ip:
+                                if mygcs_ip != addr[0]:
+                                    game_sock.sendto(data, (mygcs_ip, addr[1]))
                 elif readable == streamingClient.commandSocket or readable == streamingClient.dataSocket:
                     try:
                         data = readable.recv( 32768 ) # 32k byte buffer size

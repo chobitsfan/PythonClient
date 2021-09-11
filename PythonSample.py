@@ -26,14 +26,14 @@ import time, socket, select
 
 print("hello")
 
-drone_network = "192.168.50."
 all_mygcs_ip = []
-try:
-    with open('drone_net.txt','r') as f:
-        drone_network = f.read().strip()
-except FileNotFoundError:
-    pass
-print('drone network [', drone_network,']')
+#drone_network = "192.168.50."
+#try:
+#    with open('drone_net.txt','r') as f:
+#        drone_network = f.read().strip()
+#except FileNotFoundError:
+#    pass
+#print('drone network [', drone_network,']')
 
 class Drone():
     def __init__(self, id):
@@ -41,7 +41,7 @@ class Drone():
         self.last_send_ts = 0
         self.id = id
         self.tracked = False
-        self.master = mavutil.mavlink_connection(device="udpout:"+drone_network+str(id+10)+":14550", source_system=255)
+        self.master = mavutil.mavlink_connection(device="udpin:0.0.0.0:"+str(37500+id), source_system=255)
         self.pos = ()
         self.last_adsb_ts = 0
         self.last_debug_ts = 0
@@ -218,31 +218,34 @@ def main():
                 else:
                     idx = inputs.index(readable)
                     drone = drones[idx]
-                    try:
-                        msg = drone.master.recv_msg()
-                    except ConnectionResetError:
-                        msg = None
-                    if msg is not None:
-                        msg_type = msg.get_type()
-                        if msg_type == "BAD_DATA":
-                            print ("bad [", ":".join("{:02x}".format(c) for c in msg.get_msgbuf()), "]")
+                    while True:
+                        try:
+                            msg = drone.master.recv_msg()
+                        except ConnectionResetError:
+                            msg = None
+                        if msg is None:
+                            break
                         else:
-                            for mygcs_ip in all_mygcs_ip:
-                                local_sock.sendto(msg.get_msgbuf(), (mygcs_ip, 17500+idx+1))
-                            if msg_type == "HEARTBEAT":
-                                print ("[", msg.get_srcSystem(),"] heartbeat", time.time(), "mode", msg.custom_mode)
-                            elif msg_type == "STATUSTEXT":
-                                print ("[", msg.get_srcSystem(),"]", msg.text)
-                            elif msg_type == "TIMESYNC":
-                                if msg.tc1 == 0: # ardupilot send a timesync message every 10 seconds
-                                    cur_us = time.time() * 1000000 # to micro-seconds
-                                    drone.master.mav.timesync_send(int(cur_us), msg.ts1) # ardupilot log TSYN if tc1 != 0 and ts1 match
-                                    drone.time_offset = cur_us - msg.ts1 # I modified ardupilot send ts1 in us instead if ns
-                                    print ("[", msg.get_srcSystem(),"] timesync", msg.ts1 / 1000000.0) # print in seconds
-                                    drone.master.mav.set_gps_global_origin_send(0, 247749434, 1210443077, 100000)
+                            msg_type = msg.get_type()
+                            if msg_type == "BAD_DATA":
+                                print ("bad [", ":".join("{:02x}".format(c) for c in msg.get_msgbuf()), "]")
                             else:
-                                #print("[", msg.get_srcSystem(),"]", msg_type);
-                                pass
+                                for mygcs_ip in all_mygcs_ip:
+                                    local_sock.sendto(msg.get_msgbuf(), (mygcs_ip, 17500+idx+1))
+                                if msg_type == "HEARTBEAT":
+                                    print ("[", msg.get_srcSystem(),"] heartbeat", time.time(), "mode", msg.custom_mode, "seq", msg.get_seq())
+                                elif msg_type == "STATUSTEXT":
+                                    print ("[", msg.get_srcSystem(),"]", msg.text)
+                                elif msg_type == "TIMESYNC":
+                                    if msg.tc1 == 0: # ardupilot send a timesync message every 10 seconds
+                                        cur_us = time.time() * 1000000 # to micro-seconds
+                                        drone.master.mav.timesync_send(int(cur_us), msg.ts1) # ardupilot log TSYN if tc1 != 0 and ts1 match
+                                        drone.time_offset = cur_us - msg.ts1 # I modified ardupilot send ts1 in us instead if ns
+                                        print ("[", msg.get_srcSystem(),"] timesync", msg.ts1 / 1000000.0) # print in seconds
+                                        drone.master.mav.set_gps_global_origin_send(0, 247749434, 1210443077, 100000)
+                                else:
+                                    #print("[", msg.get_srcSystem(),"]", msg_type);
+                                    pass
             cur_ts = time.time()
             #if cur_ts - last_sys_time_sent > 5:
             #    last_sys_time_sent = cur_ts
@@ -252,7 +255,7 @@ def main():
             if cur_ts - last_hb_send_ts > 3:
                 last_hb_send_ts = cur_ts
                 for drone in drones:
-                    drone.master.mav.heartbeat_send(6, 0, 0, 0, 0)
+                    #drone.master.mav.heartbeat_send(6, 0, 0, 0, 0)
                     if drone.time_offset == 0:
                         drone.master.mav.system_time_send(int(time.time() * 1000000), 0) # ardupilot ignore time_boot_ms 
         except KeyboardInterrupt:

@@ -333,7 +333,7 @@ class NatNetClient:
         # Send information to any listener.
         if self.newFrameListener is not None:
             self.newFrameListener( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBodyCount, skeletonCount,
-                                  labeledMarkerCount, timecode, timecodeSub, timestamp, isRecording, trackedModelsChanged )
+                                  labeledMarkerCount, timecode, timecodeSub, timestamp, stampCameraExposure, isRecording, trackedModelsChanged )
 
     # Unpack a marker set description packet
     def __unpackMarkerSetDescription( self, data ):

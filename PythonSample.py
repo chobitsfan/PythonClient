@@ -34,8 +34,6 @@ all_mygcs_ip = []
 #except FileNotFoundError:
 #    pass
 #print('drone network [', drone_network,']')
-prvStampCameraExposure = 0
-mocapTimeStamp = 0
 
 class Drone():
     def __init__(self, id):
@@ -54,11 +52,14 @@ class Drone():
         self.lastPos = ()
         self.last_unity_send_ts = 0
 
-drones = [ Drone(i+1) for i in range(10) ]
+DRONES_MAX_COUNT = 2
+drones = [ Drone(i+1) for i in range(DRONES_MAX_COUNT) ]
 local_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 local_sock.bind(("0.0.0.0", 17500))
 game_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 game_sock.bind(("0.0.0.0", 27500))
+
+rigid_bodies = [ None ] * DRONES_MAX_COUNT
 
 def q_conjugate(q):
     w, x, y, z = q
@@ -85,89 +86,87 @@ def v_2d_cross(v1, v2):
 
 # This is a callback function that gets connected to the NatNet client. It is called once per rigid body per frame
 def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
-    if mocapTimeStamp == 0:
-        return
-    drone = drones[id-1]
-    if trackingValid:
-        #print( "Received frame for rigid body", id , position, rotation )
-        x=position[0]
-        y=position[2]
-        z=-position[1]
-        drone.pos = (x,y,z)
-        rot=(rotation[3], rotation[0], rotation[2], -rotation[1])
-        if not drone.tracked:
-            drone.tracked = True
-            print(id, "tracked", mocapTimeStamp)
-        #if drone.master is None:
-        #    drone.master = mavutil.mavlink_connection(device="udpout:192.168.50."+str(id+10)+":14550", source_system=255)
-        #if drone.time_offset == 0 and cur_ts - drone.last_sync_time > 3:
-        #    drone.master.mav.system_time_send(int(cur_ts * 1000000), 0) # ardupilot ignore time_boot_ms 
-        #    drone.last_sync_time = cur_ts
-
-        # if cur_ts - drone.last_debug_ts > 1:
-        #     drone.last_debug_ts = cur_ts
-        #     print("heading", qv_mult(rot, (1,0,0)))
-        #     v1 = qv_mult(rot, (1,0,0))
-        #     for others in drones:
-        #         if others.tracked and others.id != drone.id:
-        #             v2 = (others.pos[0]-drone.pos[0],others.pos[1]-drone.pos[1])
-        #             if drone.id == 2:
-        #                 angle = math.atan2(v_2d_cross(v1,v2), v_2d_dot(v1,v2))
-        #                 print("angle", angle*180.0/math.pi)
-        #                 if angle < 0:
-        #                     angle = angle + 2 * math.pi
-        #                 sector = int((angle / (2 * math.pi / 16) + 1) / 2)
-        #                 if sector == 8:
-        #                     sector = 0
-        #                 print("sector", sector)
-
-        if mocapTimeStamp - drone.last_unity_send_ts >= 0.015:
-            m = drone.master.mav.att_pos_mocap_encode(0, (rotation[3], rotation[0], rotation[1], rotation[2]), position[0], position[1], position[2])
-            m.pack(drone.master.mav)
-            for mygcs_ip in all_mygcs_ip:
-                local_sock.sendto(m.get_msgbuf(), (mygcs_ip, 17500+id))
-            drone.last_unity_send_ts = mocapTimeStamp
-
-        if drone.hb_rcvd:
-            if mocapTimeStamp - drone.last_send_ts >= 0.04:
-                if drone.lastPos:
-                    m = drone.master.mav.att_pos_mocap_encode(int(mocapTimeStamp * 1000000), rot, x, y, z) # time_usec
-                    m.pack(drone.master.mav)
-                    b = m.get_msgbuf()
-                    elapsed_sec = mocapTimeStamp - drone.last_send_ts
-                    m = drone.master.mav.vision_speed_estimate_encode(int(mocapTimeStamp * 1000000), (x-drone.lastPos[0])/elapsed_sec, (y-drone.lastPos[1])/elapsed_sec, (z-drone.lastPos[2])/elapsed_sec)
-                    m.pack(drone.master.mav)
-                    drone.master.write(b+m.get_msgbuf())
-                drone.lastPos = (x,y,z)
-                drone.last_send_ts = mocapTimeStamp
-            # drone avoid is not used in ncsist
-            # for opponent in drones:
-            #     if opponent.tracked and opponent.id != drone.id and ((opponent.pos[0]-drone.pos[0])**2+(opponent.pos[1]-drone.pos[1])**2)<=0.64 and abs(opponent.pos[2]-drone.pos[2])<0.3:
-            #         if cur_ts - drone.last_adsb_ts >= 0.02:
-            #             v1 = qv_mult(rot, (1,0,0))
-            #             v2 = (opponent.pos[0]-drone.pos[0],opponent.pos[1]-drone.pos[1])
-            #             angle = math.atan2(v_2d_cross(v1,v2), v_2d_dot(v1,v2))
-            #             if angle < 0:
-            #                 angle = angle + 2 * math.pi
-            #             sector = int((angle / (2 * math.pi / 16) + 1) / 2)
-            #             if sector == 8:
-            #                 sector = 0
-            #             drone.master.mav.distance_sensor_send(int(cur_ts*1000-drone.time_offset*0.001),int(opponent.pos[0]*100+1000),int(opponent.pos[1]*100+1000),0,10,0,sector,0)
-            #             drone.last_adsb_ts = cur_ts
-            #             break
-    else:        
-        if drone.tracked:
-            drone.tracked = False
-            print(id, "not tracked", mocapTimeStamp)
+    rigid_bodies[id-1] = (id, position, rotation, trackingValid)
 
 # This is a callback function that gets connected to the NatNet client and called once per mocap frame.
 def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBodyCount, skeletonCount,
                     labeledMarkerCount, timecode, timecodeSub, timestamp, stampCameraExposure, isRecording, trackedModelsChanged ):
-    #global prvStampCameraExposure
-    #print("new frame", timestamp)
-    #prvStampCameraExposure = stampCameraExposure
-    global mocapTimeStamp
-    mocapTimeStamp = timestamp
+    for rigid_body in rigid_bodies:
+        id = rigid_body[0]
+        trackingValid = rigid_body[3]
+        drone = drones[id-1]
+        if trackingValid:
+            position = rigid_body[1]
+            rotation = rigid_body[2]
+            x=position[0]
+            y=position[2]
+            z=-position[1]
+            drone.pos = (x,y,z)
+            rot=(rotation[3], rotation[0], rotation[2], -rotation[1])
+            if not drone.tracked:
+                drone.tracked = True
+                print(id, "tracked", timestamp)
+            #if drone.master is None:
+            #    drone.master = mavutil.mavlink_connection(device="udpout:192.168.50."+str(id+10)+":14550", source_system=255)
+            #if drone.time_offset == 0 and cur_ts - drone.last_sync_time > 3:
+            #    drone.master.mav.system_time_send(int(cur_ts * 1000000), 0) # ardupilot ignore time_boot_ms 
+            #    drone.last_sync_time = cur_ts
+
+            # if cur_ts - drone.last_debug_ts > 1:
+            #     drone.last_debug_ts = cur_ts
+            #     print("heading", qv_mult(rot, (1,0,0)))
+            #     v1 = qv_mult(rot, (1,0,0))
+            #     for others in drones:
+            #         if others.tracked and others.id != drone.id:
+            #             v2 = (others.pos[0]-drone.pos[0],others.pos[1]-drone.pos[1])
+            #             if drone.id == 2:
+            #                 angle = math.atan2(v_2d_cross(v1,v2), v_2d_dot(v1,v2))
+            #                 print("angle", angle*180.0/math.pi)
+            #                 if angle < 0:
+            #                     angle = angle + 2 * math.pi
+            #                 sector = int((angle / (2 * math.pi / 16) + 1) / 2)
+            #                 if sector == 8:
+            #                     sector = 0
+            #                 print("sector", sector)
+
+            if timestamp - drone.last_unity_send_ts >= 0.015:
+                m = drone.master.mav.att_pos_mocap_encode(0, (rotation[3], rotation[0], rotation[1], rotation[2]), position[0], position[1], position[2])
+                m.pack(drone.master.mav)
+                for mygcs_ip in all_mygcs_ip:
+                    local_sock.sendto(m.get_msgbuf(), (mygcs_ip, 17500+id))
+                drone.last_unity_send_ts = timestamp
+
+            if drone.hb_rcvd:
+                if timestamp - drone.last_send_ts >= 0.05:
+                    if drone.lastPos:
+                        m = drone.master.mav.att_pos_mocap_encode(int(timestamp * 1000000), rot, x, y, z) # time_usec
+                        m.pack(drone.master.mav)
+                        b = m.get_msgbuf()
+                        elapsed_sec = timestamp - drone.last_send_ts
+                        m = drone.master.mav.vision_speed_estimate_encode(int(timestamp * 1000000), (x-drone.lastPos[0])/elapsed_sec, (y-drone.lastPos[1])/elapsed_sec, (z-drone.lastPos[2])/elapsed_sec)
+                        m.pack(drone.master.mav)
+                        drone.master.write(b+m.get_msgbuf())
+                    drone.lastPos = (x,y,z)
+                    drone.last_send_ts = timestamp
+                # drone avoid is not used in ncsist
+                # for opponent in drones:
+                #     if opponent.tracked and opponent.id != drone.id and ((opponent.pos[0]-drone.pos[0])**2+(opponent.pos[1]-drone.pos[1])**2)<=0.64 and abs(opponent.pos[2]-drone.pos[2])<0.3:
+                #         if cur_ts - drone.last_adsb_ts >= 0.02:
+                #             v1 = qv_mult(rot, (1,0,0))
+                #             v2 = (opponent.pos[0]-drone.pos[0],opponent.pos[1]-drone.pos[1])
+                #             angle = math.atan2(v_2d_cross(v1,v2), v_2d_dot(v1,v2))
+                #             if angle < 0:
+                #                 angle = angle + 2 * math.pi
+                #             sector = int((angle / (2 * math.pi / 16) + 1) / 2)
+                #             if sector == 8:
+                #                 sector = 0
+                #             drone.master.mav.distance_sensor_send(int(cur_ts*1000-drone.time_offset*0.001),int(opponent.pos[0]*100+1000),int(opponent.pos[1]*100+1000),0,10,0,sector,0)
+                #             drone.last_adsb_ts = cur_ts
+                #             break
+        else:
+            if drone.tracked:
+                drone.tracked = False
+                print(id, "not tracked", timestamp)
 
 def main():
     # This will create a new NatNet client
@@ -255,16 +254,18 @@ def main():
                                     print ("[", msg.get_srcSystem(),"]", msg.text)
                                 elif msg_type == "TIMESYNC":
                                     if msg.tc1 == 0: # ardupilot send a timesync message every 10 seconds
-                                        cur_us = time.time() * 1000000 # to micro-seconds
-                                        drone.master.mav.timesync_send(int(cur_us), msg.ts1) # ardupilot log TSYN if tc1 != 0 and ts1 match
+                                        cur_us = int(time.time() * 1000000) # to micro-seconds
+                                        drone.master.mav.timesync_send(cur_us, msg.ts1) # ardupilot log TSYN if tc1 != 0 and ts1 match
                                         #drone.time_offset = cur_us - msg.ts1 # I modified ardupilot send ts1 in us instead if ns
                                         print ("[", msg.get_srcSystem(),"] timesync", msg.ts1 / 1000000.0) # print in seconds
-                                        drone.master.mav.system_time_send(int(time.time() * 1000000), 0) # ardupilot ignore time_boot_ms 
+
+                                        drone.master.mav.system_time_send(cur_us, 0) # ardupilot ignore time_boot_ms
+
                                         drone.master.mav.set_gps_global_origin_send(0, 247749434, 1210443077, 100000)
                                 else:
                                     #print("[", msg.get_srcSystem(),"]", msg_type);
                                     pass
-            cur_ts = time.time()
+            #cur_ts = time.time()
             #if cur_ts - last_sys_time_sent > 5:
             #    last_sys_time_sent = cur_ts
             #    for drone in drones:

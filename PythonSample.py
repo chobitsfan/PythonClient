@@ -59,6 +59,8 @@ local_sock.bind(("0.0.0.0", 17500))
 game_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 game_sock.bind(("0.0.0.0", 27500))
 
+#prvStampCameraExposure = 0
+
 rigid_bodies = [ None ] * DRONES_MAX_COUNT
 
 def q_conjugate(q):
@@ -91,6 +93,10 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
 # This is a callback function that gets connected to the NatNet client and called once per mocap frame.
 def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBodyCount, skeletonCount,
                     labeledMarkerCount, timecode, timecodeSub, timestamp, stampCameraExposure, isRecording, trackedModelsChanged ):
+    #stampCameraExposure Given in host's high resolution ticks, 1 tick = 0.1 us in my windows 10
+    #global prvStampCameraExposure
+    #print("recv frame", stampCameraExposure - prvStampCameraExposure)
+    #prvStampCameraExposure = stampCameraExposure
     for rigid_body in rigid_bodies:
         id = rigid_body[0]
         trackingValid = rigid_body[3]
@@ -105,7 +111,7 @@ def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBo
             rot=(rotation[3], rotation[0], rotation[2], -rotation[1])
             if not drone.tracked:
                 drone.tracked = True
-                print(id, "tracked", timestamp)
+                print(id, "tracked", stampCameraExposure * 0.0000001)
             #if drone.master is None:
             #    drone.master = mavutil.mavlink_connection(device="udpout:192.168.50."+str(id+10)+":14550", source_system=255)
             #if drone.time_offset == 0 and cur_ts - drone.last_sync_time > 3:
@@ -129,25 +135,25 @@ def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBo
             #                     sector = 0
             #                 print("sector", sector)
 
-            if timestamp - drone.last_unity_send_ts >= 0.015:
+            if stampCameraExposure - drone.last_unity_send_ts >= 150000:
                 m = drone.master.mav.att_pos_mocap_encode(0, (rotation[3], rotation[0], rotation[1], rotation[2]), position[0], position[1], position[2])
                 m.pack(drone.master.mav)
                 for mygcs_ip in all_mygcs_ip:
                     local_sock.sendto(m.get_msgbuf(), (mygcs_ip, 17500+id))
-                drone.last_unity_send_ts = timestamp
+                drone.last_unity_send_ts = stampCameraExposure
 
             if drone.hb_rcvd:
-                if timestamp - drone.last_send_ts >= 0.05:
+                if stampCameraExposure - drone.last_send_ts >= 500000:
                     if drone.lastPos:
-                        m = drone.master.mav.att_pos_mocap_encode(int(timestamp * 1000000), rot, x, y, z) # time_usec
+                        m = drone.master.mav.att_pos_mocap_encode(int(timestamp*1000000), rot, x, y, z) # time_usec
                         m.pack(drone.master.mav)
                         b = m.get_msgbuf()
-                        elapsed_sec = timestamp - drone.last_send_ts
-                        m = drone.master.mav.vision_speed_estimate_encode(int(timestamp * 1000000), (x-drone.lastPos[0])/elapsed_sec, (y-drone.lastPos[1])/elapsed_sec, (z-drone.lastPos[2])/elapsed_sec)
+                        elapsed_time = stampCameraExposure - drone.last_send_ts
+                        m = drone.master.mav.vision_speed_estimate_encode(int(timestamp*1000000), (x-drone.lastPos[0])*10000000/elapsed_time, (y-drone.lastPos[1])*10000000/elapsed_time, (z-drone.lastPos[2])*10000000/elapsed_time)
                         m.pack(drone.master.mav)
                         drone.master.write(b+m.get_msgbuf())
                     drone.lastPos = (x,y,z)
-                    drone.last_send_ts = timestamp
+                    drone.last_send_ts = stampCameraExposure
                 # drone avoid is not used in ncsist
                 # for opponent in drones:
                 #     if opponent.tracked and opponent.id != drone.id and ((opponent.pos[0]-drone.pos[0])**2+(opponent.pos[1]-drone.pos[1])**2)<=0.64 and abs(opponent.pos[2]-drone.pos[2])<0.3:
@@ -166,7 +172,7 @@ def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBo
         else:
             if drone.tracked:
                 drone.tracked = False
-                print(id, "not tracked", timestamp)
+                print(id, "not tracked", stampCameraExposure * 0.0000001)
 
 def main():
     # This will create a new NatNet client
@@ -256,8 +262,8 @@ def main():
                                     if msg.tc1 == 0: # ardupilot send a timesync message every 10 seconds
                                         cur_us = int(time.time() * 1000000) # to micro-seconds
                                         drone.master.mav.timesync_send(cur_us, msg.ts1) # ardupilot log TSYN if tc1 != 0 and ts1 match
-                                        #drone.time_offset = cur_us - msg.ts1 # I modified ardupilot send ts1 in us instead if ns
-                                        print ("[", msg.get_srcSystem(),"] timesync", msg.ts1 / 1000000.0) # print in seconds
+                                        #drone.time_offset = cur_us - msg.ts1 # I modified ardupilot send ts1 in us instead of nano-sec
+                                        #print ("[", msg.get_srcSystem(),"] timesync", msg.ts1 / 1000000.0) # print in seconds
 
                                         drone.master.mav.system_time_send(cur_us, 0) # ardupilot ignore time_boot_ms
 

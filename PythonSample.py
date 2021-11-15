@@ -43,8 +43,8 @@ class Drone():
         self.id = id
         self.tracked = False
         #if id == 1:
-        self.master = mavutil.mavlink_connection(device="udpin:0.0.0.0:"+str(37500+id), source_system=255)
-        #self.master = mavutil.mavlink_connection(device="udpout:140.96.178.37:"+str(17501+id), source_system=255)
+        #self.master = mavutil.mavlink_connection(device="udpin:0.0.0.0:"+str(37500+id), source_system=255)
+        self.master = mavutil.mavlink_connection(device="udpout:140.96.178.37:"+str(17501+id), source_system=255)
         self.pos = ()
         self.last_adsb_ts = 0
         self.last_debug_ts = 0
@@ -141,18 +141,20 @@ def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBo
                     local_sock.sendto(m.get_msgbuf(), (mygcs_ip, 17500+id))
                 drone.last_unity_send_ts = stampCameraExposure
 
-            if drone.hb_rcvd:
-                if stampCameraExposure - drone.last_send_ts >= 500000:
-                    if drone.lastPos:
-                        m = drone.master.mav.att_pos_mocap_encode(int(timestamp*1000000), rot, x, y, z) # time_usec
-                        m.pack(drone.master.mav)
-                        b = m.get_msgbuf()
-                        elapsed_time = stampCameraExposure - drone.last_send_ts
-                        m = drone.master.mav.vision_speed_estimate_encode(int(timestamp*1000000), (x-drone.lastPos[0])*10000000/elapsed_time, (y-drone.lastPos[1])*10000000/elapsed_time, (z-drone.lastPos[2])*10000000/elapsed_time)
-                        m.pack(drone.master.mav)
-                        drone.master.write(b+m.get_msgbuf())
-                    drone.lastPos = (x,y,z)
-                    drone.last_send_ts = stampCameraExposure
+            # tom world only use althold, do not need viso pos
+            #if drone.hb_rcvd:
+            #    if stampCameraExposure - drone.last_send_ts >= 500000:
+            #        if drone.lastPos:
+            #            m = drone.master.mav.att_pos_mocap_encode(int(timestamp*1000000), rot, x, y, z) # time_usec
+            #            m.pack(drone.master.mav)
+            #            b = m.get_msgbuf()
+            #            elapsed_time = stampCameraExposure - drone.last_send_ts
+            #            m = drone.master.mav.vision_speed_estimate_encode(int(timestamp*1000000), (x-drone.lastPos[0])*10000000/elapsed_time, (y-drone.lastPos[1])*10000000/elapsed_time, (z-drone.lastPos[2])*10000000/elapsed_time)
+            #            m.pack(drone.master.mav)
+            #            drone.master.write(b+m.get_msgbuf())
+            #        drone.lastPos = (x,y,z)
+            #        drone.last_send_ts = stampCameraExposure
+
                 # drone avoid is not used in ncsist
                 # for opponent in drones:
                 #     if opponent.tracked and opponent.id != drone.id and ((opponent.pos[0]-drone.pos[0])**2+(opponent.pos[1]-drone.pos[1])**2)<=0.64 and abs(opponent.pos[2]-drone.pos[2])<0.3:
@@ -272,16 +274,17 @@ def main():
                                     drone.master.mav.timesync_send(cur_us, msg.ts1) # ardupilot log TSYN if tc1 != 0 and ts1 match
                                     #drone.time_offset = cur_us - msg.ts1 # I modified ardupilot send ts1 in us instead of nano-sec
                                     #print ("[", msg.get_srcSystem(),"] timesync", msg.ts1 / 1000000.0) # print in seconds
-                                    drone.master.mav.system_time_send(cur_us, 0) # ardupilot ignore time_boot_ms
-                                    drone.master.mav.set_gps_global_origin_send(0, 247749434, 1210443077, 100000)
+
+                                    #drone.master.mav.system_time_send(cur_us, 0) # ardupilot ignore time_boot_ms
+                                    #drone.master.mav.set_gps_global_origin_send(0, 247749434, 1210443077, 100000)
                             else:
                                 #print("[", msg.get_srcSystem(),"]", msg_type);
                                 pass            
         cur_ts = time.time()
-        if cur_ts - last_hb_send_ts > 5:
+        if cur_ts - last_hb_send_ts > 1:
             last_hb_send_ts = cur_ts
             for drone in drones:
-                drone.master.mav.heartbeat_send(6, 0, 0, 0, 0)
+                drone.master.mav.heartbeat_send(6, 8, 0, 0, 0)
 
     print("bye")
 

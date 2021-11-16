@@ -93,6 +93,7 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
 def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBodyCount, skeletonCount,
                     labeledMarkerCount, timecode, timecodeSub, timestamp, stampCameraExposure, isRecording, trackedModelsChanged ):
     #stampCameraExposure Given in host's high resolution ticks, 1 tick = 0.1 us in my windows 10
+    #timestamp given in seconds
     #global prvStampCameraExposure
     #print("recv frame", stampCameraExposure - prvStampCameraExposure)
     #prvStampCameraExposure = stampCameraExposure
@@ -134,12 +135,12 @@ def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBo
             #                     sector = 0
             #                 print("sector", sector)
 
-            if stampCameraExposure - drone.last_unity_send_ts >= 150000:
-                m = drone.master.mav.att_pos_mocap_encode(0, (rotation[3], rotation[0], rotation[1], rotation[2]), position[0], position[1], position[2])
-                m.pack(drone.master.mav)
-                for mygcs_ip in all_mygcs_ip:
-                    local_sock.sendto(m.get_msgbuf(), (mygcs_ip, 17500+id))
-                drone.last_unity_send_ts = stampCameraExposure
+            #if stampCameraExposure - drone.last_unity_send_ts >= 150000:
+            m = drone.master.mav.att_pos_mocap_encode(int(timestamp * 1000000), (rotation[3], rotation[0], rotation[1], rotation[2]), position[0], position[1], position[2])
+            m.pack(drone.master.mav)
+            for mygcs_ip in all_mygcs_ip:
+                local_sock.sendto(m.get_msgbuf(), (mygcs_ip, 17500+id))
+            #drone.last_unity_send_ts = stampCameraExposure
 
             # tom world only use althold, do not need viso pos
             #if drone.hb_rcvd:

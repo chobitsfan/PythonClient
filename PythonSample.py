@@ -51,7 +51,7 @@ class Drone():
         self.lastPos = ()
         self.last_unity_send_ts = 0
 
-DRONES_MAX_COUNT = 2
+DRONES_MAX_COUNT = 6
 drones = [ Drone(i+1) for i in range(DRONES_MAX_COUNT) ]
 local_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 local_sock.bind(("0.0.0.0", 17500))
@@ -98,6 +98,8 @@ def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBo
     #print("recv frame", stampCameraExposure - prvStampCameraExposure)
     #prvStampCameraExposure = stampCameraExposure
     for rigid_body in rigid_bodies:
+        if rigid_body is None:
+            continue
         id = rigid_body[0]
         trackingValid = rigid_body[3]
         drone = drones[id-1]

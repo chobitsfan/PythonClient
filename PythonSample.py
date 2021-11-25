@@ -22,7 +22,7 @@
 #os.environ['FOR_DISABLE_CONSOLE_CTRL_HANDLER'] = '1'
 from NatNetClient import NatNetClient
 from pymavlink import mavutil
-import time, socket, select
+import time, socket, select, msvcrt
 
 print("hello")
 
@@ -203,12 +203,10 @@ def main():
     inputs.append(game_sock)
 
     last_hb_send_ts = 0
+    estop_count = 0
 
     while True:
-        try:
-            readables, writables, exceptionals = select.select(inputs, [], [], 10)
-        except KeyboardInterrupt:
-            break
+        readables, writables, exceptionals = select.select(inputs, [], [], 1)
         if local_sock in readables:
             try:
                 data, addr = local_sock.recvfrom(1024)
@@ -283,11 +281,39 @@ def main():
                             else:
                                 #print("[", msg.get_srcSystem(),"]", msg_type);
                                 pass            
+        
         cur_ts = time.time()
         if cur_ts - last_hb_send_ts > 1:
             last_hb_send_ts = cur_ts
             for drone in drones:
                 drone.master.mav.heartbeat_send(6, 8, 0, 0, 0)
+
+        if msvcrt.kbhit():
+            cc = msvcrt.getch()
+            if cc == b'q' or cc == b'Q':
+                break
+            elif cc == b's' or cc == b'S':
+                for drone in drones:
+                    if drone.hb_rcvd:
+                        drone.master.mav.set_mode_send(0, 1, 2) # althold
+                        drone.master.mav.set_mode_send(0, 1, 2) # althold
+                        drone.master.mav.command_long_send(0, 0, 400, 0, 1, 0, 0, 0, 0, 0, 0) # arm
+                        drone.master.mav.command_long_send(0, 0, 400, 0, 1, 0, 0, 0, 0, 0, 0) # arm
+                for mygcs_ip in all_mygcs_ip:
+                    m = drone.master.mav.manual_control_encode(0, 0, 0, 0, 0, 2)
+                    m.pack(drone.master.mav)
+                    game_sock.sendto(m.get_msgbuf(), (mygcs_ip, 18500))
+            elif cc == b'l' or cc == b'L':
+                for drone in drones:
+                    if drone.hb_rcvd:
+                        drone.master.mav.set_mode_send(0, 1, 9) # land
+            elif cc == b'e' or cc == b'E':
+                estop_count += 1
+                if estop_count > 3:
+                    estop_count = 0
+                    for drone in drones:
+                        if drone.hb_rcvd:
+                            drone.master.mav.command_long_send(0, 0, 400, 0, 0, 21196, 0, 0, 0, 0, 0) # force disarm
 
     print("bye")
 

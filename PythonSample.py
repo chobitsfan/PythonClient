@@ -204,6 +204,8 @@ def main():
 
     last_hb_send_ts = 0
     estop_count = 0
+    arming_drones = False
+    reboot_count = 0
 
     while True:
         readables, writables, exceptionals = select.select(inputs, [], [], 1)
@@ -288,17 +290,24 @@ def main():
             for drone in drones:
                 drone.master.mav.heartbeat_send(6, 8, 0, 0, 0)
 
+        if arming_drones:
+            for drone in drones:
+                if drone.hb_rcvd:
+                    drone.master.mav.command_long_send(0, 0, 400, 0, 1, 0, 0, 0, 0, 0, 0) # arm
+                    drone.master.mav.command_long_send(0, 0, 400, 0, 1, 0, 0, 0, 0, 0, 0) # arm
+                    drone.master.mav.command_long_send(0, 0, 400, 0, 1, 0, 0, 0, 0, 0, 0) # arm
+
         if msvcrt.kbhit():
             cc = msvcrt.getch()
             if cc == b'q' or cc == b'Q':
                 break
             elif cc == b's' or cc == b'S':
+                arming_drones = True
                 for drone in drones:
                     if drone.hb_rcvd:
                         drone.master.mav.set_mode_send(0, 1, 2) # althold
                         drone.master.mav.set_mode_send(0, 1, 2) # althold
-                        drone.master.mav.command_long_send(0, 0, 400, 0, 1, 0, 0, 0, 0, 0, 0) # arm
-                        drone.master.mav.command_long_send(0, 0, 400, 0, 1, 0, 0, 0, 0, 0, 0) # arm
+                        drone.master.mav.set_mode_send(0, 1, 2) # althold
                 for mygcs_ip in all_mygcs_ip:
                     m = drone.master.mav.manual_control_encode(0, 0, 0, 0, 0, 2)
                     m.pack(drone.master.mav)
@@ -309,11 +318,18 @@ def main():
                         drone.master.mav.set_mode_send(0, 1, 9) # land
             elif cc == b'e' or cc == b'E':
                 estop_count += 1
-                if estop_count > 3:
+                if estop_count > 2:
                     estop_count = 0
                     for drone in drones:
                         if drone.hb_rcvd:
                             drone.master.mav.command_long_send(0, 0, 400, 0, 0, 21196, 0, 0, 0, 0, 0) # force disarm
+            elif cc == b'r' or cc == b'R':
+                reboot_count += 1
+                if reboot_count > 2:
+                    reboot_count = 0
+                    for drone in drones:
+                        if drone.hb_rcvd:
+                            drone.master.mav.command_long_send(0, 0, 246, 0, 1, 0, 0, 0, 0, 0, 0) # reboot
 
     print("bye")
 

@@ -285,7 +285,7 @@ def main():
                                 pass            
         
         cur_ts = time.time()
-        if cur_ts - last_hb_send_ts > 1:
+        if cur_ts - last_hb_send_ts > 2:
             last_hb_send_ts = cur_ts
             for drone in drones:
                 drone.master.mav.heartbeat_send(6, 8, 0, 0, 0)

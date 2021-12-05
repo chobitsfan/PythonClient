@@ -146,8 +146,10 @@ def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBo
             #drone.last_unity_send_ts = stampCameraExposure
 
             # tom world only use althold, do not need viso pos
-            #if drone.hb_rcvd:
-            #    if stampCameraExposure - drone.last_send_ts >= 500000:
+            if drone.hb_rcvd:
+                if stampCameraExposure - drone.last_send_ts >= 500000:
+                    drone.master.mav.att_pos_mocap_send(int(timestamp*1000000), rot, x, y, z) # time_usec
+                    drone.last_send_ts = stampCameraExposure
             #        if drone.lastPos:
             #            m = drone.master.mav.att_pos_mocap_encode(int(timestamp*1000000), rot, x, y, z) # time_usec
             #            m.pack(drone.master.mav)
@@ -297,7 +299,6 @@ def main():
                 if drone.hb_rcvd:
                     drone.master.mav.command_long_send(0, 0, 400, 0, 1, 0, 0, 0, 0, 0, 0) # arm
                     drone.master.mav.command_long_send(0, 0, 400, 0, 1, 0, 0, 0, 0, 0, 0) # arm
-                    drone.master.mav.command_long_send(0, 0, 400, 0, 1, 0, 0, 0, 0, 0, 0) # arm
 
         if msvcrt.kbhit():
             cc = msvcrt.getch()
@@ -307,9 +308,11 @@ def main():
                 arming_drones = True
                 for drone in drones:
                     if drone.hb_rcvd:
-                        drone.master.mav.set_mode_send(0, 1, 2) # althold
-                        drone.master.mav.set_mode_send(0, 1, 2) # althold
-                        drone.master.mav.set_mode_send(0, 1, 2) # althold
+                        #drone.master.mav.set_mode_send(0, 1, 2) # althold
+                        #drone.master.mav.set_mode_send(0, 1, 2) # althold
+                        drone.master.mav.set_mode_send(0, 1, 16) # podhold
+                        drone.master.mav.set_mode_send(0, 1, 16) # podhold
+
                 for mygcs_ip in all_mygcs_ip:
                     m = drone.master.mav.manual_control_encode(0, 0, 0, 0, 0, 2)
                     m.pack(drone.master.mav)
@@ -318,12 +321,14 @@ def main():
                 for drone in drones:
                     if drone.hb_rcvd:
                         drone.master.mav.set_mode_send(0, 1, 9) # land
+                        drone.master.mav.set_mode_send(0, 1, 9) # land
             elif cc == b'e' or cc == b'E':
                 estop_count += 1
-                if estop_count > 2:
+                if estop_count > 1:
                     estop_count = 0
                     for drone in drones:
                         if drone.hb_rcvd:
+                            drone.master.mav.command_long_send(0, 0, 400, 0, 0, 21196, 0, 0, 0, 0, 0) # force disarm
                             drone.master.mav.command_long_send(0, 0, 400, 0, 0, 21196, 0, 0, 0, 0, 0) # force disarm
             elif cc == b'r' or cc == b'R':
                 reboot_count += 1

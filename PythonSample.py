@@ -44,7 +44,8 @@ class Drone():
         self.tracked = False
         #if id == 1:
         #self.master = mavutil.mavlink_connection(device="udpin:0.0.0.0:"+str(37500+id), source_system=255)
-        self.master = mavutil.mavlink_connection(device="udpout:140.96.178.37:"+str(17501+id), source_system=255)
+        #self.master = mavutil.mavlink_connection(device="udpout:192.168.205.168:"+str(17509+id), source_system=255)
+        self.master = mavutil.mavlink_connection(device="udpin:0.0.0.0:"+str(17500+id), source_system=255)
         self.pos = ()
         self.last_adsb_ts = 0
         self.last_debug_ts = 0
@@ -291,6 +292,7 @@ def main():
                 drone.master.mav.heartbeat_send(6, 8, 0, 0, 0)
 
         if arming_drones:
+            arming_drones = False
             for drone in drones:
                 if drone.hb_rcvd:
                     drone.master.mav.command_long_send(0, 0, 400, 0, 1, 0, 0, 0, 0, 0, 0) # arm

@@ -282,7 +282,7 @@ def main():
                                     #print ("[", msg.get_srcSystem(),"] timesync", msg.ts1 / 1000000.0) # print in seconds
 
                                     #drone.master.mav.system_time_send(cur_us, 0) # ardupilot ignore time_boot_ms
-                                    #drone.master.mav.set_gps_global_origin_send(0, 247749434, 1210443077, 100000)
+                                    drone.master.mav.set_gps_global_origin_send(0, 247749434, 1210443077, 100000)
                             else:
                                 #print("[", msg.get_srcSystem(),"]", msg_type);
                                 pass            
@@ -337,6 +337,10 @@ def main():
                     for drone in drones:
                         if drone.hb_rcvd:
                             drone.master.mav.command_long_send(0, 0, 246, 0, 1, 0, 0, 0, 0, 0, 0) # reboot
+            elif cc == b'n' or cc == b'N':
+                for drone in drones:
+                    if drone.hb_rcvd:
+                        drone.master.write(b'\x09' * 8)
 
     print("bye")
 

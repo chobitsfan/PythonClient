@@ -308,11 +308,8 @@ def main():
                 arming_drones = True
                 for drone in drones:
                     if drone.hb_rcvd:
-                        #drone.master.mav.set_mode_send(0, 1, 2) # althold
-                        #drone.master.mav.set_mode_send(0, 1, 2) # althold
                         drone.master.mav.set_mode_send(0, 1, 16) # podhold
                         drone.master.mav.set_mode_send(0, 1, 16) # podhold
-
                 for mygcs_ip in all_mygcs_ip:
                     m = drone.master.mav.manual_control_encode(0, 0, 0, 0, 0, 2)
                     m.pack(drone.master.mav)
@@ -341,6 +338,16 @@ def main():
                 for drone in drones:
                     if drone.hb_rcvd:
                         drone.master.write(b'\x09' * 8)
+            elif cc == b'g' or cc == b'G':
+                arming_drones = True
+                for drone in drones:
+                    if drone.hb_rcvd:
+                        drone.master.mav.set_mode_send(0, 1, 4) # guided
+                        drone.master.mav.set_mode_send(0, 1, 4) # guided
+            elif cc == b't' or cc == b'T':
+                for drone in drones:
+                    if drone.hb_rcvd:
+                        drone.master.mav.command_long_send(0, 0, 22, 0, 0, 0, 3, 0, 0, 0, 1) # takeoff to 1m
 
     print("bye")
 

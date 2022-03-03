@@ -513,12 +513,14 @@ class NatNetClient:
     def myinit( self ):
         # Create the data socket
         self.dataSocket = self.__createDataSocket( self.dataPort )
+        self.dataSocket.setblocking(False)
         if( self.dataSocket is None ):
             print( "Could not open data channel" )
             exit
 
         # Create the command socket
         self.commandSocket = self.__createCommandSocket()
+        self.commandSocket.setblocking(False)
         if( self.commandSocket is None ):
             print( "Could not open command channel" )
             exit

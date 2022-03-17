@@ -277,11 +277,11 @@ def main():
                             elif msg_type == "TIMESYNC":
                                 if msg.tc1 == 0: # ardupilot send a timesync message every 10 seconds
                                     cur_us = int(time.time() * 1000000) # to micro-seconds
-                                    drone.master.mav.timesync_send(cur_us, msg.ts1) # ardupilot log TSYN if tc1 != 0 and ts1 match
+                                    #drone.master.mav.timesync_send(cur_us, msg.ts1) # ardupilot log TSYN if tc1 != 0 and ts1 match
                                     #drone.time_offset = cur_us - msg.ts1 # I modified ardupilot send ts1 in us instead of nano-sec
                                     #print ("[", msg.get_srcSystem(),"] timesync", msg.ts1 / 1000000.0) # print in seconds
 
-                                    #drone.master.mav.system_time_send(cur_us, 0) # ardupilot ignore time_boot_ms
+                                    drone.master.mav.system_time_send(cur_us, 0) # ardupilot ignore time_boot_ms
                                     drone.master.mav.set_gps_global_origin_send(0, 247749434, 1210443077, 100000)
                             else:
                                 #print("[", msg.get_srcSystem(),"]", msg_type);

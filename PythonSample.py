@@ -45,12 +45,13 @@ class Drone():
         #if id == 1:
         #self.master = mavutil.mavlink_connection(device="udpin:0.0.0.0:"+str(37500+id), source_system=255)
         #self.master = mavutil.mavlink_connection(device="udpout:192.168.205.168:"+str(17509+id), source_system=255)
-        self.master = mavutil.mavlink_connection(device="udpin:0.0.0.0:"+str(17500+id), source_system=255)
+        self.master = mavutil.mavlink_connection(device="udpin:0.0.0.0:"+str(19500+id), source_system=255)
         self.pos = ()
         self.last_adsb_ts = 0
         self.last_debug_ts = 0
         self.lastPos = ()
         self.last_unity_send_ts = 0
+        self.global_pos_rcvd = False
 
 DRONES_MAX_COUNT = 6
 drones = [ Drone(i+1) for i in range(DRONES_MAX_COUNT) ]
@@ -280,9 +281,18 @@ def main():
                                     #drone.master.mav.timesync_send(cur_us, msg.ts1) # ardupilot log TSYN if tc1 != 0 and ts1 match
                                     #drone.time_offset = cur_us - msg.ts1 # I modified ardupilot send ts1 in us instead of nano-sec
                                     #print ("[", msg.get_srcSystem(),"] timesync", msg.ts1 / 1000000.0) # print in seconds
-
                                     drone.master.mav.system_time_send(cur_us, 0) # ardupilot ignore time_boot_ms
                                     drone.master.mav.set_gps_global_origin_send(0, 247749434, 1210443077, 100000)
+                                    if not drone.global_pos_rcvd:
+                                        drone.master.mav.command_long_send(0, 0, 511, 0, 33, 1000000, 0, 0, 0, 0, 0) # ask drone send global_position_int
+                            elif msg_type == "GLOBAL_POSITION_INT":
+                                if not drone.global_pos_rcvd:
+                                    print("[", msg.get_srcSystem(),"]", msg_type, msg.lat, msg.lon)
+                                drone.global_pos_rcvd = True
+                                for other_drone in drones:
+                                    if other_drone.hb_rcvd and other_drone is not drone:
+                                        other_drone.master.write(msg.get_msgbuf())
+                                        #print("send GLOBAL_POSITION_INT from", msg.get_srcSystem(), "to", other_drone.master.target_system)
                             else:
                                 #print("[", msg.get_srcSystem(),"]", msg_type);
                                 pass            

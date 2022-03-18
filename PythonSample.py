@@ -285,6 +285,8 @@ def main():
                                     drone.master.mav.set_gps_global_origin_send(0, 247749434, 1210443077, 100000)
                                     if not drone.global_pos_rcvd:
                                         drone.master.mav.command_long_send(0, 0, 511, 0, 33, 1000000, 0, 0, 0, 0, 0) # ask drone send global_position_int
+                            elif msg_type == "COLLISION":
+                                print("[", msg.get_srcSystem(),"]", msg_type);
                             elif msg_type == "GLOBAL_POSITION_INT":
                                 if not drone.global_pos_rcvd:
                                     print("[", msg.get_srcSystem(),"]", msg_type, msg.lat, msg.lon)
@@ -295,7 +297,7 @@ def main():
                                         #print("send GLOBAL_POSITION_INT from", msg.get_srcSystem(), "to", other_drone.master.target_system)
                             else:
                                 #print("[", msg.get_srcSystem(),"]", msg_type);
-                                pass            
+                                pass
         
         cur_ts = time.time()
         if cur_ts - last_hb_send_ts > 2:
@@ -317,7 +319,7 @@ def main():
             elif cc == b's' or cc == b'S':
                 arming_drones = True
                 for drone in drones:
-                    if drone.hb_rcvd:
+                    if drone.hb_rcvd and drone.id == 1:
                         drone.master.mav.set_mode_send(0, 1, 16) # podhold
                         drone.master.mav.set_mode_send(0, 1, 16) # podhold
                 for mygcs_ip in all_mygcs_ip:

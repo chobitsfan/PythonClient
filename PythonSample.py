@@ -46,10 +46,8 @@ class Drone():
         #self.master = mavutil.mavlink_connection(device="udpin:0.0.0.0:"+str(37500+id), source_system=255)
         #self.master = mavutil.mavlink_connection(device="udpout:192.168.205.168:"+str(17509+id), source_system=255)
         self.master = mavutil.mavlink_connection(device="udpin:0.0.0.0:"+str(19500+id), source_system=255)
-        self.pos = ()
-        self.last_adsb_ts = 0
         self.last_debug_ts = 0
-        self.lastPos = ()
+        self.last_pos = ()
         self.last_unity_send_ts = 0
         self.global_pos_rcvd = False
 
@@ -111,11 +109,10 @@ def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBo
             x=position[0]
             y=position[2]
             z=-position[1]
-            drone.pos = (x,y,z)
             rot=(rotation[3], rotation[0], rotation[2], -rotation[1])
             if not drone.tracked:
                 drone.tracked = True
-                print(id, "tracked", stampCameraExposure * 0.0000001)
+                print(id, "tracked", timestamp)
             #if drone.master is None:
             #    drone.master = mavutil.mavlink_connection(device="udpout:192.168.50."+str(id+10)+":14550", source_system=255)
             #if drone.time_offset == 0 and cur_ts - drone.last_sync_time > 3:
@@ -146,11 +143,15 @@ def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBo
                 local_sock.sendto(m.get_msgbuf(), (mygcs_ip, 17500+id))
             #drone.last_unity_send_ts = stampCameraExposure
 
-            # tom world only use althold, do not need viso pos
             if drone.hb_rcvd:
-                if stampCameraExposure - drone.last_send_ts >= 500000:
+                if timestamp - drone.last_send_ts >= 0.08:
                     drone.master.mav.att_pos_mocap_send(int(timestamp*1000000), rot, x, y, z) # time_usec
-                    drone.last_send_ts = stampCameraExposure
+                    if drone.last_pos:
+                        elapsed_time = timestamp - drone.last_send_ts
+                        if elapsed_time < 1:
+                            drone.master.mav.vision_speed_estimate_send(int(timestamp*1000000), (x-drone.last_pos[0])/elapsed_time, (y-drone.last_pos[1])/elapsed_time, (z-drone.last_pos[2])/elapsed_time)
+                    drone.last_send_ts = timestamp
+                    drone.last_pos = (x, y, z)
             #        if drone.lastPos:
             #            m = drone.master.mav.att_pos_mocap_encode(int(timestamp*1000000), rot, x, y, z) # time_usec
             #            m.pack(drone.master.mav)
@@ -180,7 +181,7 @@ def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBo
         else:
             if drone.tracked:
                 drone.tracked = False
-                print(id, "not tracked", stampCameraExposure * 0.0000001)
+                print(id, "not tracked", timestamp)
 
 def main():
     # This will create a new NatNet client
@@ -284,12 +285,12 @@ def main():
                                     drone.master.mav.system_time_send(cur_us, 0) # ardupilot ignore time_boot_ms
                                     drone.master.mav.set_gps_global_origin_send(0, 247749434, 1210443077, 100000)
                                     if not drone.global_pos_rcvd:
-                                        drone.master.mav.command_long_send(0, 0, 511, 0, 33, 1000000, 0, 0, 0, 0, 0) # ask drone send global_position_int
+                                        drone.master.mav.command_long_send(0, 0, 511, 0, 32, 1000000, 0, 0, 0, 0, 0) # ask drone send local_position_ned
                             elif msg_type == "COLLISION":
                                 print("[", msg.get_srcSystem(),"]", msg_type);
-                            elif msg_type == "GLOBAL_POSITION_INT":
+                            elif msg_type == "LOCAL_POSITION_NED":
                                 if not drone.global_pos_rcvd:
-                                    print("[", msg.get_srcSystem(),"]", msg_type, msg.lat, msg.lon)
+                                    print("[", msg.get_srcSystem(),"]", msg_type)
                                 drone.global_pos_rcvd = True
                                 for other_drone in drones:
                                     if other_drone.hb_rcvd and other_drone is not drone:
@@ -319,7 +320,7 @@ def main():
             elif cc == b's' or cc == b'S':
                 arming_drones = True
                 for drone in drones:
-                    if drone.hb_rcvd and drone.id == 1:
+                    if drone.hb_rcvd:
                         drone.master.mav.set_mode_send(0, 1, 16) # podhold
                         drone.master.mav.set_mode_send(0, 1, 16) # podhold
                 for mygcs_ip in all_mygcs_ip:

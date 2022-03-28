@@ -285,7 +285,7 @@ def main():
                                     drone.master.mav.system_time_send(cur_us, 0) # ardupilot ignore time_boot_ms
                                     drone.master.mav.set_gps_global_origin_send(0, 247749434, 1210443077, 100000)
                                     if not drone.global_pos_rcvd:
-                                        drone.master.mav.command_long_send(0, 0, 511, 0, 32, 1000000, 0, 0, 0, 0, 0) # ask drone send local_position_ned
+                                        drone.master.mav.command_long_send(0, 0, 511, 0, 32, 500000, 0, 0, 0, 0, 0) # ask drone send local_position_ned
                             elif msg_type == "COLLISION":
                                 print("[", msg.get_srcSystem(),"]", msg_type);
                             elif msg_type == "LOCAL_POSITION_NED":
@@ -295,7 +295,7 @@ def main():
                                 for other_drone in drones:
                                     if other_drone.hb_rcvd and other_drone is not drone:
                                         other_drone.master.write(msg.get_msgbuf())
-                                        #print("send GLOBAL_POSITION_INT from", msg.get_srcSystem(), "to", other_drone.master.target_system)
+                                        #print("send LOCAL_POSITION_NED from", msg.get_srcSystem(), "to", other_drone.master.target_system)
                             else:
                                 #print("[", msg.get_srcSystem(),"]", msg_type);
                                 pass

@@ -34,6 +34,12 @@ all_mygcs_ip = []
 #except FileNotFoundError:
 #    pass
 #print('drone network [', drone_network,']')
+try:
+    with open('gcs_ip.txt','r') as f:
+        all_mygcs_ip.append(f.read().strip())
+        print(all_mygcs_ip)
+except FileNotFoundError:
+    pass
 
 class Drone():
     def __init__(self, id):

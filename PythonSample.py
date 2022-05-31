@@ -57,7 +57,7 @@ class Drone():
         self.last_unity_send_ts = 0
         self.global_pos_rcvd = False
 
-DRONES_MAX_COUNT = 6
+DRONES_MAX_COUNT = 10
 drones = [ Drone(i+1) for i in range(DRONES_MAX_COUNT) ]
 local_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 local_sock.bind(("0.0.0.0", 17500))

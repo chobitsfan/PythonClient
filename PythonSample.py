@@ -22,7 +22,7 @@
 #os.environ['FOR_DISABLE_CONSOLE_CTRL_HANDLER'] = '1'
 from NatNetClient import NatNetClient
 from pymavlink import mavutil
-import time, socket, select, msvcrt
+import time, socket, select, msvcrt, struct
 
 print("hello")
 
@@ -142,7 +142,7 @@ def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBo
             m = drone.master.mav.att_pos_mocap_encode(int(timestamp * 1000000), (rotation[3], rotation[0], rotation[1], rotation[2]), position[0], position[1], position[2])
             m.pack(drone.master.mav)
             for mygcs_ip in all_mygcs_ip:
-                local_sock.sendto(m.get_msgbuf(), (mygcs_ip, 17500+id))
+                local_sock.sendto(m.get_msgbuf(), (mygcs_ip, 17800+id))
             #drone.last_unity_send_ts = stampCameraExposure
 
             # tom world only use althold, do not need viso pos
@@ -220,7 +220,7 @@ def main():
                     print(err)
             else:
                 if(len(data) > 0):
-                    drones[addr[1]-17500-1].master.write(data)
+                    drones[addr[1]-17800-1].master.write(data)
         if game_sock in readables:
             try:
                 data, addr = game_sock.recvfrom(1024)
@@ -233,8 +233,8 @@ def main():
                     all_mygcs_ip.append(addr[0])
                 if(len(data) > 0):
                     for mygcs_ip in all_mygcs_ip:
-                        if mygcs_ip != addr[0]:
-                            game_sock.sendto(data, (mygcs_ip, addr[1]))
+                        #if mygcs_ip != addr[0]:
+                        game_sock.sendto(data, (mygcs_ip, addr[1]))
         if streamingClient.commandSocket in readables:
             try:
                 data = streamingClient.commandSocket.recv( 32768 ) # 32k byte buffer size
@@ -268,7 +268,7 @@ def main():
                             print ("bad [", ":".join("{:02x}".format(c) for c in msg.get_msgbuf()), "]")
                         else:
                             for mygcs_ip in all_mygcs_ip:
-                                local_sock.sendto(msg.get_msgbuf(), (mygcs_ip, 17500+drone.id))
+                                local_sock.sendto(msg.get_msgbuf(), (mygcs_ip, 17800+drone.id))
                             if msg_type == "HEARTBEAT":
                                 print ("[", msg.get_srcSystem(),"] heartbeat", time.time(), "mode", msg.custom_mode, "seq", msg.get_seq())
                                 drone.hb_rcvd = True
@@ -311,9 +311,7 @@ def main():
                         drone.master.mav.set_mode_send(0, 1, 16) # podhold
                         drone.master.mav.set_mode_send(0, 1, 16) # podhold
                 for mygcs_ip in all_mygcs_ip:
-                    m = drone.master.mav.manual_control_encode(0, 0, 0, 0, 0, 2)
-                    m.pack(drone.master.mav)
-                    game_sock.sendto(m.get_msgbuf(), (mygcs_ip, 18500))
+                    game_sock.sendto(struct.pack("f", 1.0), (mygcs_ip, 18500)) #game start
             elif cc == b'l' or cc == b'L':
                 for drone in drones:
                     if drone.hb_rcvd:

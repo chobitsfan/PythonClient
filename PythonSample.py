@@ -48,7 +48,7 @@ class Drone():
         self.master = mavutil.mavlink_connection(device="udpin:0.0.0.0:"+str(17500+id), source_system=255)
         #self.last_adsb_ts = 0
         #self.last_debug_ts = 0
-        #self.last_pos = ()
+        self.last_pos = ()
         #self.last_unity_send_ts = 0
 
 DRONES_MAX_COUNT = 6
@@ -90,6 +90,7 @@ def receiveRigidBodyFrame( id, position, rotation, trackingValid ):
     rigid_bodies[id-1] = (id, position, rotation, trackingValid)
 
 # This is a callback function that gets connected to the NatNet client and called once per mocap frame.
+# it is called AFTER receiveRigidBodyFrame
 def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBodyCount, skeletonCount,
                     labeledMarkerCount, timecode, timecodeSub, timestamp, stampCameraExposure, isRecording, trackedModelsChanged ):
     #stampCameraExposure Given in host's high resolution ticks, 1 tick = 0.1 us in my windows 10
@@ -109,7 +110,6 @@ def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBo
             x=position[0]
             y=position[2]
             z=-position[1]
-            drone.pos = (x,y,z)
             rot=(rotation[3], rotation[0], rotation[2], -rotation[1])
             if not drone.tracked:
                 drone.tracked = True
@@ -147,7 +147,12 @@ def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBo
             if drone.hb_rcvd:
                 if timestamp - drone.last_send_ts >= 0.1:
                     drone.master.mav.att_pos_mocap_send(int(timestamp*1000000), rot, x, y, z) # time_usec
+                    if drone.last_pos:
+                        elapsed_time = timestamp - drone.last_send_ts
+                        if elapsed_time < 1:
+                            drone.master.mav.vision_speed_estimate_send(int(timestamp*1000000), (x-drone.last_pos[0])/elapsed_time, (y-drone.last_pos[1])/elapsed_time, (z-drone.last_pos[2])/elapsed_time)
                     drone.last_send_ts = timestamp
+                    drone.last_pos = (x, y, z)
             #        if drone.lastPos:
             #            m = drone.master.mav.att_pos_mocap_encode(int(timestamp*1000000), rot, x, y, z) # time_usec
             #            m.pack(drone.master.mav)

@@ -46,11 +46,10 @@ class Drone():
         #self.master = mavutil.mavlink_connection(device="udpin:0.0.0.0:"+str(37500+id), source_system=255)
         #self.master = mavutil.mavlink_connection(device="udpout:192.168.205.168:"+str(17509+id), source_system=255)
         self.master = mavutil.mavlink_connection(device="udpin:0.0.0.0:"+str(17500+id), source_system=255)
-        self.pos = ()
-        self.last_adsb_ts = 0
-        self.last_debug_ts = 0
-        self.lastPos = ()
-        self.last_unity_send_ts = 0
+        #self.last_adsb_ts = 0
+        #self.last_debug_ts = 0
+        #self.last_pos = ()
+        #self.last_unity_send_ts = 0
 
 DRONES_MAX_COUNT = 6
 drones = [ Drone(i+1) for i in range(DRONES_MAX_COUNT) ]
@@ -114,7 +113,7 @@ def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBo
             rot=(rotation[3], rotation[0], rotation[2], -rotation[1])
             if not drone.tracked:
                 drone.tracked = True
-                print(id, "tracked", stampCameraExposure * 0.0000001)
+                print(id, "tracked", timestamp)
             #if drone.master is None:
             #    drone.master = mavutil.mavlink_connection(device="udpout:192.168.50."+str(id+10)+":14550", source_system=255)
             #if drone.time_offset == 0 and cur_ts - drone.last_sync_time > 3:
@@ -145,11 +144,10 @@ def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBo
                 local_sock.sendto(m.get_msgbuf(), (mygcs_ip, 17800+id))
             #drone.last_unity_send_ts = stampCameraExposure
 
-            # tom world only use althold, do not need viso pos
             if drone.hb_rcvd:
-                if stampCameraExposure - drone.last_send_ts >= 500000:
+                if timestamp - drone.last_send_ts >= 0.1:
                     drone.master.mav.att_pos_mocap_send(int(timestamp*1000000), rot, x, y, z) # time_usec
-                    drone.last_send_ts = stampCameraExposure
+                    drone.last_send_ts = timestamp
             #        if drone.lastPos:
             #            m = drone.master.mav.att_pos_mocap_encode(int(timestamp*1000000), rot, x, y, z) # time_usec
             #            m.pack(drone.master.mav)
@@ -179,7 +177,7 @@ def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBo
         else:
             if drone.tracked:
                 drone.tracked = False
-                print(id, "not tracked", stampCameraExposure * 0.0000001)
+                print(id, "not tracked", timestamp)
 
 def main():
     # This will create a new NatNet client

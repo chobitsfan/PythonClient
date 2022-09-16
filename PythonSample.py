@@ -48,9 +48,11 @@ class Drone():
         self.master = mavutil.mavlink_connection(device="udpin:0.0.0.0:"+str(17500+id), source_system=255)
         #self.last_adsb_ts = 0
         #self.last_debug_ts = 0
-        self.last_pos = ()
+        self.last_pos = None
         #self.last_unity_send_ts = 0
         self.wait_mode_to_arm = -1
+        self.cur_pos = None
+        self.tgt_pos = None
 
 DRONES_MAX_COUNT = 6
 drones = [ Drone(i+1) for i in range(DRONES_MAX_COUNT) ]
@@ -112,6 +114,7 @@ def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBo
             y=position[2]
             z=-position[1]
             rot=(rotation[3], rotation[0], rotation[2], -rotation[1])
+            drone.cur_pos = (x, y, z)
             if not drone.tracked:
                 drone.tracked = True
                 print(id, "tracked", timestamp)
@@ -148,7 +151,7 @@ def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBo
             if drone.hb_rcvd:
                 if timestamp - drone.last_send_ts >= 0.1:
                     drone.master.mav.att_pos_mocap_send(int(timestamp*1000000), rot, x, y, z) # time_usec
-                    if drone.last_pos:
+                    if drone.last_pos is not None:
                         elapsed_time = timestamp - drone.last_send_ts
                         if elapsed_time < 1:
                             drone.master.mav.vision_speed_estimate_send(int(timestamp*1000000), (x-drone.last_pos[0])/elapsed_time, (y-drone.last_pos[1])/elapsed_time, (z-drone.last_pos[2])/elapsed_time)
@@ -279,6 +282,10 @@ def main():
                                     drone.wait_mode_to_arm = -1
                                     drone.master.mav.command_long_send(0, 0, 400, 0, 1, 0, 0, 0, 0, 0, 0) # arm
                                     drone.master.mav.command_long_send(0, 0, 400, 0, 1, 0, 0, 0, 0, 0, 0) # arm
+                                elif drone.tgt_pos is not None:
+                                    drone.master.mav.set_position_target_local_ned_send(0, 0, 0, 1, 3576, drone.tgt_pos[0], drone.tgt_pos[1], drone.tgt_pos[2], 0, 0, 0, 0, 0, 0, 0, 0)
+                                    drone.master.mav.set_position_target_local_ned_send(0, 0, 0, 1, 3576, drone.tgt_pos[0], drone.tgt_pos[1], drone.tgt_pos[2], 0, 0, 0, 0, 0, 0, 0, 0)
+                                    drone.tgt_pos = None
                             elif msg_type == "STATUSTEXT":
                                 print ("[", msg.get_srcSystem(),"]", msg.text)
                             elif msg_type == "TIMESYNC":
@@ -335,7 +342,7 @@ def main():
             elif cc == b'n' or cc == b'N':
                 for drone in drones:
                     if drone.hb_rcvd:
-                        drone.master.write(b'\x09' * 8)
+                        drone.master.write(b'\x09' * 8) # tell 5g modem to enter flight mode
             elif cc == b'g' or cc == b'G':
                 for drone in drones:
                     if drone.hb_rcvd:
@@ -346,6 +353,29 @@ def main():
                 for drone in drones:
                     if drone.hb_rcvd:
                         drone.master.mav.command_long_send(0, 0, 22, 0, 0, 0, 3, 0, 0, 0, 1) # takeoff to 1m
+            elif cc == b'p' or cc == b'P':
+                for drone in drones:
+                    if drone.hb_rcvd:
+                        drone.master.mav.set_mode_send(0, 1, 4) # guided
+                        drone.master.mav.set_mode_send(0, 1, 4) # guided
+                drone_a = None
+                drone_b = None
+                for drone in drones:
+                    if drone.tracked:
+                        if drone_a is None:
+                            drone_a = drone
+                        else:
+                            drone_b = drone
+                if drone_a is not None and drone_b is not None:
+                    if abs(drone_a.cur_pos[1]) < abs(drone_b.cur_pos[1]):
+                        drone_to_move = drone_a
+                    else:
+                        drone_to_move = drone_b
+                    if drone_to_move.cur_pos[1] < 0:
+                        tgt_pos = (drone_to_move.cur_pos[0], 1, drone_to_move.cur_pos[2])
+                    else:
+                        tgt_pos = (drone_to_move.cur_pos[0], -1, drone_to_move.cur_pos[2])
+                    drone_to_move.tgt_pos = tgt_pos
 
     print("bye")
 

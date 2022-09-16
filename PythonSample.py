@@ -50,6 +50,7 @@ class Drone():
         #self.last_debug_ts = 0
         self.last_pos = ()
         #self.last_unity_send_ts = 0
+        self.wait_mode_to_arm = -1
 
 DRONES_MAX_COUNT = 6
 drones = [ Drone(i+1) for i in range(DRONES_MAX_COUNT) ]
@@ -210,7 +211,6 @@ def main():
 
     last_hb_send_ts = 0
     estop_count = 0
-    arming_drones = False
     reboot_count = 0
 
     while True:
@@ -275,6 +275,10 @@ def main():
                             if msg_type == "HEARTBEAT":
                                 print ("[", msg.get_srcSystem(),"] heartbeat", time.time(), "mode", msg.custom_mode, "seq", msg.get_seq())
                                 drone.hb_rcvd = True
+                                if drone.wait_mode_to_arm == msg.custom_mode:
+                                    drone.wait_mode_to_arm = -1
+                                    drone.master.mav.command_long_send(0, 0, 400, 0, 1, 0, 0, 0, 0, 0, 0) # arm
+                                    drone.master.mav.command_long_send(0, 0, 400, 0, 1, 0, 0, 0, 0, 0, 0) # arm
                             elif msg_type == "STATUSTEXT":
                                 print ("[", msg.get_srcSystem(),"]", msg.text)
                             elif msg_type == "TIMESYNC":
@@ -287,7 +291,7 @@ def main():
                                     #drone.master.mav.system_time_send(cur_us, 0) # ardupilot ignore time_boot_ms
                                     drone.master.mav.set_gps_global_origin_send(0, 247749434, 1210443077, 100000)
                             else:
-                                #print("[", msg.get_srcSystem(),"]", msg_type);
+                                #print("[", msg.get_srcSystem(),"]", msg_type)
                                 pass            
         
         cur_ts = time.time()
@@ -296,23 +300,16 @@ def main():
             for drone in drones:
                 drone.master.mav.heartbeat_send(6, 8, 0, 0, 0)
 
-        if arming_drones:
-            arming_drones = False
-            for drone in drones:
-                if drone.hb_rcvd:
-                    drone.master.mav.command_long_send(0, 0, 400, 0, 1, 0, 0, 0, 0, 0, 0) # arm
-                    drone.master.mav.command_long_send(0, 0, 400, 0, 1, 0, 0, 0, 0, 0, 0) # arm
-
         if msvcrt.kbhit():
             cc = msvcrt.getch()
             if cc == b'q' or cc == b'Q':
                 break
             elif cc == b's' or cc == b'S':
-                arming_drones = True
                 for drone in drones:
                     if drone.hb_rcvd:
                         drone.master.mav.set_mode_send(0, 1, 16) # podhold
                         drone.master.mav.set_mode_send(0, 1, 16) # podhold
+                        drone.wait_mode_to_arm = 16
                 for mygcs_ip in all_mygcs_ip:
                     game_sock.sendto(struct.pack("f", 1.0), (mygcs_ip, 18500)) #game start
             elif cc == b'l' or cc == b'L':
@@ -340,11 +337,11 @@ def main():
                     if drone.hb_rcvd:
                         drone.master.write(b'\x09' * 8)
             elif cc == b'g' or cc == b'G':
-                arming_drones = True
                 for drone in drones:
                     if drone.hb_rcvd:
                         drone.master.mav.set_mode_send(0, 1, 4) # guided
                         drone.master.mav.set_mode_send(0, 1, 4) # guided
+                        drone.wait_mode_to_arm = 4
             elif cc == b't' or cc == b'T':
                 for drone in drones:
                     if drone.hb_rcvd:

@@ -261,45 +261,42 @@ def main():
                     streamingClient.processMessage( data )
         for drone in drones:
             if drone.master.port in readables:
-                while True:
-                    try:
-                        msg = drone.master.recv_msg()
-                    except ConnectionResetError:
-                        msg = None
-                    if msg is None:
-                        break
+                try:
+                    msg = drone.master.recv_msg()
+                except ConnectionResetError:
+                    msg = None
+                if msg is not None:
+                    msg_type = msg.get_type()
+                    if msg_type == "BAD_DATA":
+                        print ("bad [", ":".join("{:02x}".format(c) for c in msg.get_msgbuf()), "]")
                     else:
-                        msg_type = msg.get_type()
-                        if msg_type == "BAD_DATA":
-                            print ("bad [", ":".join("{:02x}".format(c) for c in msg.get_msgbuf()), "]")
-                        else:
-                            for mygcs_ip in all_mygcs_ip:
-                                local_sock.sendto(msg.get_msgbuf(), (mygcs_ip, 17800+drone.id))
-                            if msg_type == "HEARTBEAT":
-                                print ("[", msg.get_srcSystem(),"] heartbeat", time.time(), "mode", msg.custom_mode, "seq", msg.get_seq())
-                                drone.hb_rcvd = True
-                                if drone.wait_mode_to_arm == msg.custom_mode:
-                                    drone.wait_mode_to_arm = -1
-                                    drone.master.mav.command_long_send(0, 0, 400, 0, 1, 0, 0, 0, 0, 0, 0) # arm
-                                    drone.master.mav.command_long_send(0, 0, 400, 0, 1, 0, 0, 0, 0, 0, 0) # arm
-                                elif drone.tgt_pos is not None:
-                                    drone.master.mav.set_position_target_local_ned_send(0, 0, 0, 1, 3576, drone.tgt_pos[0], drone.tgt_pos[1], drone.tgt_pos[2], 0, 0, 0, 0, 0, 0, 0, 0)
-                                    drone.master.mav.set_position_target_local_ned_send(0, 0, 0, 1, 3576, drone.tgt_pos[0], drone.tgt_pos[1], drone.tgt_pos[2], 0, 0, 0, 0, 0, 0, 0, 0)
-                                    drone.tgt_pos = None
-                            elif msg_type == "STATUSTEXT":
-                                print ("[", msg.get_srcSystem(),"]", msg.text)
-                            elif msg_type == "TIMESYNC":
-                                if msg.tc1 == 0: # ardupilot send a timesync message every 10 seconds
-                                    cur_us = int(time.time() * 1000000) # to micro-seconds
-                                    drone.master.mav.timesync_send(cur_us, msg.ts1) # ardupilot log TSYN if tc1 != 0 and ts1 match
-                                    #drone.time_offset = cur_us - msg.ts1 # I modified ardupilot send ts1 in us instead of nano-sec
-                                    #print ("[", msg.get_srcSystem(),"] timesync", msg.ts1 / 1000000.0) # print in seconds
+                        for mygcs_ip in all_mygcs_ip:
+                            local_sock.sendto(msg.get_msgbuf(), (mygcs_ip, 17800+drone.id))
+                        if msg_type == "HEARTBEAT":
+                            print ("[", msg.get_srcSystem(),"] heartbeat", time.time(), "mode", msg.custom_mode, "seq", msg.get_seq())
+                            drone.hb_rcvd = True
+                            if drone.wait_mode_to_arm == msg.custom_mode:
+                                drone.wait_mode_to_arm = -1
+                                drone.master.mav.command_long_send(0, 0, 400, 0, 1, 0, 0, 0, 0, 0, 0) # arm
+                                drone.master.mav.command_long_send(0, 0, 400, 0, 1, 0, 0, 0, 0, 0, 0) # arm
+                            elif drone.tgt_pos is not None:
+                                drone.master.mav.set_position_target_local_ned_send(0, 0, 0, 1, 3576, drone.tgt_pos[0], drone.tgt_pos[1], drone.tgt_pos[2], 0, 0, 0, 0, 0, 0, 0, 0)
+                                drone.master.mav.set_position_target_local_ned_send(0, 0, 0, 1, 3576, drone.tgt_pos[0], drone.tgt_pos[1], drone.tgt_pos[2], 0, 0, 0, 0, 0, 0, 0, 0)
+                                drone.tgt_pos = None
+                        elif msg_type == "STATUSTEXT":
+                            print ("[", msg.get_srcSystem(),"]", msg.text)
+                        elif msg_type == "TIMESYNC":
+                            if msg.tc1 == 0: # ardupilot send a timesync message every 10 seconds
+                                cur_us = int(time.time() * 1000000) # to micro-seconds
+                                drone.master.mav.timesync_send(cur_us, msg.ts1) # ardupilot log TSYN if tc1 != 0 and ts1 match
+                                #drone.time_offset = cur_us - msg.ts1 # I modified ardupilot send ts1 in us instead of nano-sec
+                                #print ("[", msg.get_srcSystem(),"] timesync", msg.ts1 / 1000000.0) # print in seconds
 
-                                    #drone.master.mav.system_time_send(cur_us, 0) # ardupilot ignore time_boot_ms
-                                    drone.master.mav.set_gps_global_origin_send(0, 247749434, 1210443077, 100000)
-                            else:
-                                #print("[", msg.get_srcSystem(),"]", msg_type)
-                                pass            
+                                #drone.master.mav.system_time_send(cur_us, 0) # ardupilot ignore time_boot_ms
+                                drone.master.mav.set_gps_global_origin_send(0, 247749434, 1210443077, 100000)
+                        else:
+                            #print("[", msg.get_srcSystem(),"]", msg_type)
+                            pass
         
         cur_ts = time.time()
         if cur_ts - last_hb_send_ts > 2:

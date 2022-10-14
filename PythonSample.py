@@ -142,6 +142,7 @@ def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBo
             #                 print("sector", sector)
 
             #if stampCameraExposure - drone.last_unity_send_ts >= 150000:
+            # unity content will handle coordinate system translate
             m = drone.master.mav.att_pos_mocap_encode(int(timestamp * 1000000), (rotation[3], rotation[0], rotation[1], rotation[2]), position[0], position[1], position[2])
             m.pack(drone.master.mav)
             for mygcs_ip in all_mygcs_ip:
@@ -154,7 +155,14 @@ def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBo
                     if drone.last_pos is not None:
                         elapsed_time = timestamp - drone.last_send_ts
                         if elapsed_time < 1:
-                            drone.master.mav.vision_speed_estimate_send(int(timestamp*1000000), (x-drone.last_pos[0])/elapsed_time, (y-drone.last_pos[1])/elapsed_time, (z-drone.last_pos[2])/elapsed_time)
+                            vx = (x-drone.last_pos[0])/elapsed_time
+                            vy = (y-drone.last_pos[1])/elapsed_time
+                            vz = (z-drone.last_pos[2])/elapsed_time
+                            drone.master.mav.vision_speed_estimate_send(int(timestamp*1000000), vx, vy, vz)
+                            for other_drone in drones:
+                                if other_drone.hb_rcvd and other_drone is not drone:
+                                    # fill time_boot_ms with mavlink id, my modified ardupilot will handle this
+                                    other_drone.master.mav.local_position_ned_send(drone.id, x, y, z, vx, vy,vz)
                     drone.last_send_ts = timestamp
                     drone.last_pos = (x, y, z)
             #        if drone.lastPos:

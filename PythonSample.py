@@ -23,6 +23,7 @@
 from NatNetClient import NatNetClient
 from pymavlink import mavutil
 import time, socket, select, msvcrt, struct
+from pymavlink.dialects.v10 import ardupilotmega as mavlink1
 
 print("hello")
 
@@ -34,6 +35,18 @@ all_mygcs_ip = []
 #except FileNotFoundError:
 #    pass
 #print('drone network [', drone_network,']')
+
+class fifo(object):
+    def __init__(self):
+        self.buf = []
+    def write(self, data):
+        self.buf += data
+        return len(data)
+    def read(self):
+        return self.buf.pop(0)
+
+dbg_f = fifo()
+dbg_mav = mavlink1.MAVLink(dbg_f)
 
 class Drone():
     def __init__(self, id):
@@ -53,6 +66,8 @@ class Drone():
         self.wait_mode_to_arm = -1
         self.cur_pos = None
         self.tgt_pos = None
+        self.lost_track_count = 0
+        self.last_hb_rcv_ts = 0
 
 DRONES_MAX_COUNT = 6
 drones = [ Drone(i+1) for i in range(DRONES_MAX_COUNT) ]
@@ -115,6 +130,7 @@ def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBo
             z=-position[1]
             rot=(rotation[3], rotation[0], rotation[2], -rotation[1])
             drone.cur_pos = (x, y, z)
+            drone.lost_track_count = 0
             if not drone.tracked:
                 drone.tracked = True
                 print(id, "tracked", timestamp)
@@ -150,7 +166,7 @@ def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBo
             #drone.last_unity_send_ts = stampCameraExposure
 
             if drone.hb_rcvd:
-                if timestamp - drone.last_send_ts >= 0.1:
+                if timestamp - drone.last_send_ts >= 0.2:
                     drone.master.mav.att_pos_mocap_send(int(timestamp*1000000), rot, x, y, z) # time_usec
                     if drone.last_pos is not None:
                         elapsed_time = timestamp - drone.last_send_ts
@@ -192,9 +208,10 @@ def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBo
                 #             drone.last_adsb_ts = cur_ts
                 #             break
         else:
-            if drone.tracked:
+            drone.lost_track_count += 1
+            if drone.tracked and drone.lost_track_count > 60:
                 drone.tracked = False
-                print(id, "not tracked", timestamp)
+                print(id, "not tracked in 60 frames", timestamp)
 
 def main():
     # This will create a new NatNet client
@@ -220,7 +237,7 @@ def main():
     inputs.append(streamingClient.dataSocket)
     inputs.append(game_sock)
 
-    last_hb_send_ts = 0
+    #last_hb_send_ts = 0
     estop_count = 0
     reboot_count = 0
 
@@ -234,6 +251,9 @@ def main():
                     print(err)
             else:
                 if(len(data) > 0):
+                    msg = dbg_mav.decode(bytearray(data))
+                    if msg.get_type() == 'SET_MODE':
+                        print('set_mode to', msg.custom_mode)
                     drones[addr[1]-17800-1].master.write(data)
         if game_sock in readables:
             try:
@@ -267,6 +287,7 @@ def main():
             else:
                 if(len(data) > 0):
                     streamingClient.processMessage( data )
+        cur_ts = time.time()
         for drone in drones:
             if drone.master.port in readables:
                 try:
@@ -281,8 +302,10 @@ def main():
                         for mygcs_ip in all_mygcs_ip:
                             local_sock.sendto(msg.get_msgbuf(), (mygcs_ip, 17800+drone.id))
                         if msg_type == "HEARTBEAT":
-                            print ("[", msg.get_srcSystem(),"] heartbeat", time.time(), "mode", msg.custom_mode, "seq", msg.get_seq())
-                            drone.hb_rcvd = True
+                            if not drone.hb_rcvd:
+                                print ("[", msg.get_srcSystem(),"] heartbeat", cur_ts, "mode", msg.custom_mode, "seq", msg.get_seq())
+                                drone.hb_rcvd = True
+                            drone.last_hb_rcv_ts = cur_ts
                             if drone.wait_mode_to_arm == msg.custom_mode:
                                 drone.wait_mode_to_arm = -1
                                 drone.master.mav.command_long_send(0, 0, 400, 0, 1, 0, 0, 0, 0, 0, 0) # arm
@@ -295,8 +318,8 @@ def main():
                             print ("[", msg.get_srcSystem(),"]", msg.text)
                         elif msg_type == "TIMESYNC":
                             if msg.tc1 == 0: # ardupilot send a timesync message every 10 seconds
-                                cur_us = int(time.time() * 1000000) # to micro-seconds
-                                drone.master.mav.timesync_send(cur_us, msg.ts1) # ardupilot log TSYN if tc1 != 0 and ts1 match
+                                #cur_us = int(time.time() * 1000000) # to micro-seconds
+                                #drone.master.mav.timesync_send(cur_us, msg.ts1) # ardupilot log TSYN if tc1 != 0 and ts1 match
                                 #drone.time_offset = cur_us - msg.ts1 # I modified ardupilot send ts1 in us instead of nano-sec
                                 #print ("[", msg.get_srcSystem(),"] timesync", msg.ts1 / 1000000.0) # print in seconds
 
@@ -305,12 +328,14 @@ def main():
                         else:
                             #print("[", msg.get_srcSystem(),"]", msg_type)
                             pass
-        
-        cur_ts = time.time()
-        if cur_ts - last_hb_send_ts > 2:
-            last_hb_send_ts = cur_ts
-            for drone in drones:
-                drone.master.mav.heartbeat_send(6, 8, 0, 0, 0)
+            if drone.hb_rcvd and cur_ts - drone.last_hb_rcv_ts > 3:
+                print('no heartbeat from drone', drone.id, 'in 3 s')
+                drone.hb_rcvd = False
+
+        #if cur_ts - last_hb_send_ts > 2:
+        #    last_hb_send_ts = cur_ts
+        #    for drone in drones:
+        #        drone.master.mav.heartbeat_send(6, 8, 0, 0, 0)
 
         if msvcrt.kbhit():
             cc = msvcrt.getch()

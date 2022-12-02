@@ -174,7 +174,7 @@ def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBo
                             vx = (x-drone.last_pos[0])/elapsed_time
                             vy = (y-drone.last_pos[1])/elapsed_time
                             vz = (z-drone.last_pos[2])/elapsed_time
-                            drone.master.mav.vision_speed_estimate_send(int(timestamp*1000000), vx, vy, vz)
+                    #        drone.master.mav.vision_speed_estimate_send(int(timestamp*1000000), vx, vy, vz)
                             for other_drone in drones:
                                 if other_drone.hb_rcvd and other_drone is not drone:
                                     # fill time_boot_ms with mavlink id, my modified ardupilot will handle this
@@ -325,6 +325,8 @@ def main():
 
                                 #drone.master.mav.system_time_send(cur_us, 0) # ardupilot ignore time_boot_ms
                                 drone.master.mav.set_gps_global_origin_send(0, 247749434, 1210443077, 100000)
+                        elif msg_type == "COLLISION":
+                            print("[", msg.get_srcSystem(),"] collision", msg.id, f'{msg.horizontal_minimum_delta:.3f}', f'{msg.altitude_minimum_delta:.3f}')
                         else:
                             #print("[", msg.get_srcSystem(),"]", msg_type)
                             pass

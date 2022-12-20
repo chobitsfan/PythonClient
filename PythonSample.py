@@ -27,7 +27,7 @@ from pymavlink.dialects.v10 import ardupilotmega as mavlink1
 
 print("hello")
 
-all_mygcs_ip = []
+all_mygcs_ip = ['127.0.0.1', '192.168.0.34']
 #drone_network = "192.168.50."
 #try:
 #    with open('drone_net.txt','r') as f:
@@ -113,9 +113,6 @@ def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBo
                     labeledMarkerCount, timecode, timecodeSub, timestamp, stampCameraExposure, isRecording, trackedModelsChanged ):
     #stampCameraExposure Given in host's high resolution ticks, 1 tick = 0.1 us in my windows 10
     #timestamp given in seconds
-    #global prvStampCameraExposure
-    #print("recv frame", stampCameraExposure - prvStampCameraExposure)
-    #prvStampCameraExposure = stampCameraExposure
     for rigid_body in rigid_bodies:
         if rigid_body is None:
             continue
@@ -134,36 +131,12 @@ def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBo
             if not drone.tracked:
                 drone.tracked = True
                 print(id, "tracked", timestamp)
-            #if drone.master is None:
-            #    drone.master = mavutil.mavlink_connection(device="udpout:192.168.50."+str(id+10)+":14550", source_system=255)
-            #if drone.time_offset == 0 and cur_ts - drone.last_sync_time > 3:
-            #    drone.master.mav.system_time_send(int(cur_ts * 1000000), 0) # ardupilot ignore time_boot_ms 
-            #    drone.last_sync_time = cur_ts
 
-            # if cur_ts - drone.last_debug_ts > 1:
-            #     drone.last_debug_ts = cur_ts
-            #     print("heading", qv_mult(rot, (1,0,0)))
-            #     v1 = qv_mult(rot, (1,0,0))
-            #     for others in drones:
-            #         if others.tracked and others.id != drone.id:
-            #             v2 = (others.pos[0]-drone.pos[0],others.pos[1]-drone.pos[1])
-            #             if drone.id == 2:
-            #                 angle = math.atan2(v_2d_cross(v1,v2), v_2d_dot(v1,v2))
-            #                 print("angle", angle*180.0/math.pi)
-            #                 if angle < 0:
-            #                     angle = angle + 2 * math.pi
-            #                 sector = int((angle / (2 * math.pi / 16) + 1) / 2)
-            #                 if sector == 8:
-            #                     sector = 0
-            #                 print("sector", sector)
-
-            #if stampCameraExposure - drone.last_unity_send_ts >= 150000:
             # unity content will handle coordinate system translate
             m = drone.master.mav.att_pos_mocap_encode(int(timestamp * 1000000), (rotation[3], rotation[0], rotation[1], rotation[2]), position[0], position[1], position[2])
             m.pack(drone.master.mav)
             for mygcs_ip in all_mygcs_ip:
                 local_sock.sendto(m.get_msgbuf(), (mygcs_ip, 17800+id))
-            #drone.last_unity_send_ts = stampCameraExposure
 
             if drone.hb_rcvd:
                 if timestamp - drone.last_send_ts >= 0.2:
@@ -174,39 +147,13 @@ def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBo
                             vx = (x-drone.last_pos[0])/elapsed_time
                             vy = (y-drone.last_pos[1])/elapsed_time
                             vz = (z-drone.last_pos[2])/elapsed_time
-                    #        drone.master.mav.vision_speed_estimate_send(int(timestamp*1000000), vx, vy, vz)
+                            drone.master.mav.vision_speed_estimate_send(int(timestamp*1000000), vx, vy, vz)
                             for other_drone in drones:
                                 if other_drone.hb_rcvd and other_drone is not drone:
                                     # fill time_boot_ms with mavlink id, my modified ardupilot will handle this
                                     other_drone.master.mav.local_position_ned_send(drone.id, x, y, z, vx, vy,vz)
                     drone.last_send_ts = timestamp
                     drone.last_pos = (x, y, z)
-            #        if drone.lastPos:
-            #            m = drone.master.mav.att_pos_mocap_encode(int(timestamp*1000000), rot, x, y, z) # time_usec
-            #            m.pack(drone.master.mav)
-            #            b = m.get_msgbuf()
-            #            elapsed_time = stampCameraExposure - drone.last_send_ts
-            #            m = drone.master.mav.vision_speed_estimate_encode(int(timestamp*1000000), (x-drone.lastPos[0])*10000000/elapsed_time, (y-drone.lastPos[1])*10000000/elapsed_time, (z-drone.lastPos[2])*10000000/elapsed_time)
-            #            m.pack(drone.master.mav)
-            #            drone.master.write(b+m.get_msgbuf())
-            #        drone.lastPos = (x,y,z)
-            #        drone.last_send_ts = stampCameraExposure
-
-                # drone avoid is not used in ncsist
-                # for opponent in drones:
-                #     if opponent.tracked and opponent.id != drone.id and ((opponent.pos[0]-drone.pos[0])**2+(opponent.pos[1]-drone.pos[1])**2)<=0.64 and abs(opponent.pos[2]-drone.pos[2])<0.3:
-                #         if cur_ts - drone.last_adsb_ts >= 0.02:
-                #             v1 = qv_mult(rot, (1,0,0))
-                #             v2 = (opponent.pos[0]-drone.pos[0],opponent.pos[1]-drone.pos[1])
-                #             angle = math.atan2(v_2d_cross(v1,v2), v_2d_dot(v1,v2))
-                #             if angle < 0:
-                #                 angle = angle + 2 * math.pi
-                #             sector = int((angle / (2 * math.pi / 16) + 1) / 2)
-                #             if sector == 8:
-                #                 sector = 0
-                #             drone.master.mav.distance_sensor_send(int(cur_ts*1000-drone.time_offset*0.001),int(opponent.pos[0]*100+1000),int(opponent.pos[1]*100+1000),0,10,0,sector,0)
-                #             drone.last_adsb_ts = cur_ts
-                #             break
         else:
             drone.lost_track_count += 1
             if drone.tracked and drone.lost_track_count > 60:
@@ -250,10 +197,10 @@ def main():
                 if err.errno != 10054:
                     print(err)
             else:
-                if(len(data) > 0):
-                    msg = dbg_mav.decode(bytearray(data))
-                    if msg.get_type() == 'SET_MODE':
-                        print('set_mode to', msg.custom_mode)
+                if len(data) > 0:
+                    #msg = dbg_mav.decode(bytearray(data))
+                    #if msg.get_type() == 'SET_MODE':
+                    #    print('set_mode to', msg.custom_mode)
                     drones[addr[1]-17800-1].master.write(data)
         if game_sock in readables:
             try:
@@ -326,7 +273,8 @@ def main():
                                 #drone.master.mav.system_time_send(cur_us, 0) # ardupilot ignore time_boot_ms
                                 drone.master.mav.set_gps_global_origin_send(0, 247749434, 1210443077, 100000)
                         elif msg_type == "COLLISION":
-                            print("[", msg.get_srcSystem(),"] collision", msg.id, f'{msg.horizontal_minimum_delta:.3f}', f'{msg.altitude_minimum_delta:.3f}')
+                            if msg.threat_level > 1:
+                                print("[", msg.get_srcSystem(),"] collision", msg.id, f'{msg.time_to_minimum_delta:.1f}', f'{msg.horizontal_minimum_delta:.2f}', f'{msg.altitude_minimum_delta:.2f}')
                         else:
                             #print("[", msg.get_srcSystem(),"]", msg_type)
                             pass
